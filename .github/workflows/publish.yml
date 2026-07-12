@@ -1,0 +1,50 @@
+name: Publish Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Verify
+        run: |
+          npm run typecheck
+          npm run build
+          npm run test:run
+          npm run smoke:cli
+          npm run smoke:eval
+          npm run smoke:pack
+          npm run task:public-check
+
+      - name: Verify release tag matches package version
+        if: ${{ github.event_name == 'push' }}
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+
+      - name: Preview package on manual runs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: npm pack --dry-run
+
+      - name: Publish to npm with OIDC
+        if: ${{ github.event_name == 'push' }}
+        run: npm publish --access public

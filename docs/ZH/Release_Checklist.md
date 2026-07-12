@@ -71,6 +71,8 @@ git diff --check
 ## Package 门槛
 
 - 如果 package metadata 或 included public docs 变化，使用 `npm pack --dry-run` 检查 tarball 内容。
+- 确认 npm Trusted Publishing 已绑定 `daoGEE/mdgraph` 和准确的 workflow 文件名 `publish.yml`，并允许 `npm publish`。
+- 通过推送与 `package.json` 版本一致的 `v*` 标签发布；`.github/workflows/publish.yml` 使用 GitHub Actions OIDC，不需要长期 npm token。
 - 确认 package 包含 `dist`、`README.md`、`README-ZH.md`、`CHANGELOG.md` 和 `LICENSE`。
 - 发布前在干净的临时 prefix 中全局安装打包 tarball，并验证 `mdgraph --version`、`init` 和一个代表性查询。
 - 确认 package 不包含 `.mdgraph/`、任务工件目录、临时输出、本地数据库或外部工作区内容。

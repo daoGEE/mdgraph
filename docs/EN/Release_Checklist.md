@@ -71,6 +71,8 @@ Expected results:
 ## Package gate
 
 - Inspect the tarball contents if package metadata or included public docs changed: `npm pack --dry-run`.
+- Confirm npm Trusted Publishing is bound to `daoGEE/mdgraph` and the exact workflow filename `publish.yml`, with the `npm publish` action allowed.
+- Publish by pushing a `v*` tag whose version matches `package.json`; `.github/workflows/publish.yml` uses GitHub Actions OIDC and does not require a long-lived npm token.
 - Confirm the package includes `dist`, `README.md`, `README-ZH.md`, `CHANGELOG.md`, and `LICENSE`.
 - Install the packed tarball globally under a clean temporary prefix and verify `mdgraph --version`, `init`, and one representative query before publishing.
 - Confirm no `.mdgraph/`, task artifact directory, temp output, local database, or external workspace content is included.
