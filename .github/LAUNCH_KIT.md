@@ -45,6 +45,32 @@ Also verify manually:
 - The social preview image is readable at small sizes and communicates “Markdown → Graph → Agent Context”.
 - The repository website field points to the most useful demo or documentation page if one becomes available.
 
+## Verified Demo Asset
+
+This release-owned example is safe to reuse in launch posts. It was rerun after publishing `1.0.0`:
+
+```bash
+mdgraph trace "docs/EN/Architecture.md" "src/query/context-builder.ts" --json
+```
+
+```json
+{
+  "from": "MDGraph Architecture",
+  "to": "src/query/context-builder.ts",
+  "found": true,
+  "steps": [
+    {
+      "edgeKind": "IMPLEMENTS",
+      "traversalDirection": "forward",
+      "confidence": 1,
+      "provenance": "frontmatter"
+    }
+  ]
+}
+```
+
+What this proves: MDGraph can connect an architecture document to an implementation path while retaining the relationship kind, direction, confidence, and provenance. What it does not prove: source-code AST analysis, automatic correctness of the documentation, or a general real-agent benchmark.
+
 ## English Launch Post
 
 ### Show HN / forum version
@@ -63,7 +89,10 @@ Body:
 >
 > The project is MIT licensed and reached 1.0. I would especially value feedback from people using MCP-capable coding agents in repositories with substantial Markdown: where does the setup feel heavy, and which documentation relationships are still missed?
 >
+> Quick start: `npm install -g @daogee/mdgraph`
+>
 > GitHub: https://github.com/daoGEE/mdgraph
+> npm: https://www.npmjs.com/package/@daogee/mdgraph
 
 ### Short social version
 
@@ -74,6 +103,8 @@ Body:
 > - 5 MCP tools
 > - no required cloud or LLM indexing service
 > - repository-owned deterministic evaluation fixtures
+>
+> Install: `npm install -g @daogee/mdgraph`
 >
 > Try it and tell me where your agent still gets lost: https://github.com/daoGEE/mdgraph
 
@@ -95,13 +126,18 @@ Body:
 >
 > 项目采用 MIT 协议，当前已到 1.0。特别想听听正在用 Codex、Claude Code、Cursor、Copilot 或其他 MCP 客户端的朋友反馈：安装哪一步最麻烦？你的项目文档里还有哪些关系无法被识别？
 >
+> 快速安装：`npm install -g @daogee/mdgraph`
+>
 > GitHub：https://github.com/daoGEE/mdgraph
+> npm：https://www.npmjs.com/package/@daogee/mdgraph
 
 ### 短版
 
 > MDGraph 1.0 发布：把项目 Markdown 转成本地、可解释的文档图谱，让 AI 编码代理通过 MCP 搜索、打包上下文和追溯关系。
 >
 > 确定性索引、SQLite、本地优先，不强制依赖云服务或 LLM 摘要，并提供仓库自有评估 fixtures。
+>
+> 安装：`npm install -g @daogee/mdgraph`
 >
 > 欢迎试用和反馈：https://github.com/daoGEE/mdgraph
 

@@ -26,7 +26,7 @@ Text search finds matching words. MDGraph finds the surrounding decision, the co
 ```text
 $ mdgraph context "How does indexing flow from Markdown files to agent context?"
 
-docs/EN/Architecture.md:49  ·  Indexing Flow
+docs/EN/Architecture.md:59  ·  Indexing Flow
 Reason: FTS5 content match; RRF fusion
 
 1. scanMarkdownFiles selects candidate Markdown files.

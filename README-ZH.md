@@ -26,7 +26,7 @@
 ```text
 $ mdgraph context "Markdown 文件如何经过索引流程变成代理上下文？"
 
-docs/EN/Architecture.md:49  ·  Indexing Flow
+docs/EN/Architecture.md:59  ·  Indexing Flow
 Reason: FTS5 content match; RRF fusion
 
 1. scanMarkdownFiles 选择候选 Markdown 文件。
