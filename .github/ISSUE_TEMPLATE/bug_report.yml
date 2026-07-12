@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible problem in MDGraph
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve MDGraph. Please use sanitized Markdown and remove private paths or content.
+  - type: input
+    id: version
+    attributes:
+      label: MDGraph version
+      placeholder: 1.0.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version and operating system
+      placeholder: Node 22.17.0, macOS 15.5
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Indexing or parsing
+        - Search or context
+        - Node or trace
+        - Doctor or reporting
+        - MCP server
+        - Watch mode
+        - Packaging or installation
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Include a minimal Markdown fixture, config, and exact command when possible.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized output or error text.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Public-data check
+      options:
+        - label: I removed private documents, secrets, database files, full transcripts, and personal machine paths.
+          required: true

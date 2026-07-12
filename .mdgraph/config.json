@@ -1,0 +1,54 @@
+{
+  "docs": {
+    "include": [
+      "README.md",
+      "README-ZH.md",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "SECURITY.md",
+      "CHANGELOG.md",
+      "agent-pack/**/*.md",
+      "docs/EN/*.md",
+      "docs/ZH/*.md"
+    ],
+    "exclude": []
+  },
+  "index": {
+    "parseMdx": false,
+    "followGitignore": true,
+    "maxFileBytes": 524288
+  },
+  "search": {
+    "defaultLimit": 8,
+    "maxDepth": 2,
+    "maxContextChars": 28000,
+    "highFrequencyEntityThreshold": 50
+  },
+  "entities": {
+    "enabledKinds": [
+      "symbol",
+      "api_route",
+      "error_code",
+      "config_key",
+      "file_path",
+      "command",
+      "package",
+      "concept"
+    ],
+    "stopEntities": [
+      "Config",
+      "Error",
+      "Service",
+      "API",
+      "User",
+      "Data",
+      "MDGraph"
+    ]
+  },
+  "embedding": {
+    "enabled": false,
+    "provider": "local-hash",
+    "model": "mdgraph-local-hash-v1",
+    "dimensions": 128
+  }
+}

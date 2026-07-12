@@ -1,0 +1,341 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_CONFIG, configPath, databasePath, initConfig, initProjectConfig, loadConfig } from "../src/config/load-config.js";
+import { openExistingDatabase } from "../src/db/connection.js";
+import { parseMarkdownDocument } from "../src/parser/markdown-parser.js";
+import { LinkResolver } from "../src/resolution/link-resolver.js";
+import { scanMarkdownFiles } from "../src/scanner/file-scanner.js";
+
+let tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  tempDirs = [];
+});
+
+describe("configuration loading", () => {
+  it("loads defaults, initialized config, and reports invalid JSON with the config path", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-"));
+    tempDirs.push(root);
+
+    expect(loadConfig(root).docs.include).toEqual(DEFAULT_CONFIG.docs.include);
+    expect(loadConfig(root).docs.include).toEqual(["**/*.md", "**/*.mdx"]);
+    expect(loadConfig(root).docs.exclude).toEqual([]);
+    expect(loadConfig(root).index.followGitignore).toBe(true);
+
+    const target = initConfig(root, ["notes/**/*.md"]);
+    expect(target).toBe(configPath(root));
+    expect(loadConfig(root).docs.include).toEqual(["notes/**/*.md"]);
+
+    fs.writeFileSync(target, "{ invalid", "utf8");
+    expect(() => loadConfig(root)).toThrow(/Invalid MDGraph config/);
+    expect(() => loadConfig(root)).toThrow(target);
+    expect(() => loadConfig(root)).toThrow(/mdgraph init/);
+  });
+
+  it("merges partial config overrides and ignores unknown keys", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-partial-"));
+    tempDirs.push(root);
+
+    const target = initConfig(root);
+    fs.writeFileSync(target, JSON.stringify({
+      docs: { include: ["notes/**/*.md"] },
+      search: { defaultLimit: 3 },
+      unknownTopLevel: { keep: false }
+    }), "utf8");
+
+    const config = loadConfig(root);
+    expect(config.docs.include).toEqual(["notes/**/*.md"]);
+    expect(config.docs.exclude).toEqual(DEFAULT_CONFIG.docs.exclude);
+    expect(config.search.defaultLimit).toBe(3);
+    expect(config.search.maxDepth).toBe(DEFAULT_CONFIG.search.maxDepth);
+    expect(config.index).toEqual(DEFAULT_CONFIG.index);
+    expect(config.entities).toEqual(DEFAULT_CONFIG.entities);
+    expect(config.embedding).toEqual(DEFAULT_CONFIG.embedding);
+  });
+
+  it("rejects resource-amplifying numeric config values above product limits", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-limits-"));
+    tempDirs.push(root);
+    const target = initConfig(root);
+
+    fs.writeFileSync(target, JSON.stringify({
+      index: { maxFileBytes: 10 * 1024 * 1024 + 1 },
+      search: { defaultLimit: 8 },
+      embedding: { dimensions: 128 }
+    }), "utf8");
+
+    expect(() => loadConfig(root)).toThrow(/index\.maxFileBytes.*at most 10485760/);
+
+    fs.writeFileSync(target, JSON.stringify({ embedding: { dimensions: 4097 } }), "utf8");
+    expect(() => loadConfig(root)).toThrow(/embedding\.dimensions.*at most 4096/);
+  });
+
+  it("protects local graph artifacts while allowing config to be tracked", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-governance-"));
+    tempDirs.push(root);
+
+    const result = initProjectConfig(root, ["notes/**/*.md"]);
+
+    expect(result.configPath).toBe(configPath(root));
+    expect(result.configCreated).toBe(true);
+    expect(result.gitignorePath).toBe(path.join(root, ".gitignore"));
+    expect(result.gitignoreUpdated).toBe(true);
+    expect(loadConfig(root).docs.include).toEqual(["notes/**/*.md"]);
+
+    const gitignore = fs.readFileSync(result.gitignorePath, "utf8");
+    expect(gitignore).toContain("# MDGraph local artifacts");
+    expect(gitignore).toContain("!.mdgraph/");
+    expect(gitignore).toContain(".mdgraph/*");
+    expect(gitignore).toContain("!.mdgraph/config.json");
+
+    const second = initProjectConfig(root);
+    expect(second.configCreated).toBe(false);
+    expect(second.gitignoreUpdated).toBe(false);
+    expect(fs.readFileSync(result.gitignorePath, "utf8")).toBe(gitignore);
+  });
+
+  it("appends MDGraph ignore rules without replacing existing gitignore content", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-append-gitignore-"));
+    tempDirs.push(root);
+    const gitignorePath = path.join(root, ".gitignore");
+    fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n", "utf8");
+
+    const result = initProjectConfig(root);
+    const gitignore = fs.readFileSync(gitignorePath, "utf8");
+
+    expect(result.gitignoreUpdated).toBe(true);
+    expect(gitignore).toMatch(/^node_modules\/\ndist\/\n/);
+    expect(gitignore).toContain("# MDGraph local artifacts\n!.mdgraph/\n.mdgraph/*\n!.mdgraph/config.json\n");
+  });
+
+  it("reopens an already ignored MDGraph directory so config stays trackable", () => {
+    const patterns = [".mdgraph/\n", "/.mdgraph/\n", ".mdgraph/*\n", "**/.mdgraph/**\n"];
+
+    for (const pattern of patterns) {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-config-existing-gitignore-"));
+      tempDirs.push(root);
+      const gitignorePath = path.join(root, ".gitignore");
+      fs.writeFileSync(gitignorePath, pattern, "utf8");
+      spawnSync("git", ["init", "-q"], { cwd: root, encoding: "utf8", windowsHide: true });
+
+      const result = initProjectConfig(root);
+      fs.writeFileSync(path.join(root, ".mdgraph", "graph.db"), "local", "utf8");
+
+      expect(result.gitignoreUpdated).toBe(true);
+      expect(fs.readFileSync(gitignorePath, "utf8")).toContain("!.mdgraph/\n.mdgraph/*\n!.mdgraph/config.json");
+      expect(spawnSync("git", ["check-ignore", "-q", ".mdgraph/config.json"], { cwd: root, windowsHide: true }).status).toBe(1);
+      expect(spawnSync("git", ["check-ignore", "-q", ".mdgraph/graph.db"], { cwd: root, windowsHide: true }).status).toBe(0);
+    }
+  });
+});
+
+describe("scanMarkdownFiles", () => {
+  it("follows root gitignore by default", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-default-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "included.md"), "# Included\n", "utf8");
+    fs.writeFileSync(path.join(root, "docs", "ignored.md"), "# Ignored but useful\n", "utf8");
+    fs.writeFileSync(path.join(root, ".gitignore"), "docs/ignored.md\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, {
+      ...DEFAULT_CONFIG,
+      docs: { include: ["docs/**/*.md"], exclude: [] }
+    });
+
+    const relative = files.map((file) => path.relative(root, file).replace(/\\/g, "/")).sort();
+    expect(relative).toEqual(["docs/included.md"]);
+  });
+
+  it("can disable root gitignore filtering", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-no-gitignore-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "included.md"), "# Included\n", "utf8");
+    fs.writeFileSync(path.join(root, "docs", "ignored.md"), "# Ignored but useful\n", "utf8");
+    fs.writeFileSync(path.join(root, ".gitignore"), "docs/ignored.md\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, {
+      ...DEFAULT_CONFIG,
+      docs: { include: ["docs/**/*.md"], exclude: [] },
+      index: { ...DEFAULT_CONFIG.index, followGitignore: false }
+    });
+
+    const relative = files.map((file) => path.relative(root, file).replace(/\\/g, "/")).sort();
+    expect(relative).toEqual(["docs/ignored.md", "docs/included.md"]);
+  });
+
+  it("excludes common generated and dependency directories recursively by default", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-common-ignore-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(root, "web", "node_modules", "pkg"), { recursive: true });
+    fs.mkdirSync(path.join(root, "temp", "snapshot"), { recursive: true });
+    fs.mkdirSync(path.join(root, "packages", "app", "dist"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "included.md"), "# Included\n", "utf8");
+    fs.writeFileSync(path.join(root, "web", "node_modules", "pkg", "README.md"), "# Dependency\n", "utf8");
+    fs.writeFileSync(path.join(root, "temp", "snapshot", "copy.md"), "# Temp\n", "utf8");
+    fs.writeFileSync(path.join(root, "packages", "app", "dist", "bundle.md"), "# Build\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, DEFAULT_CONFIG);
+
+    const relative = files.map((file) => path.relative(root, file).replace(/\\/g, "/")).sort();
+    expect(relative).toEqual(["docs/included.md"]);
+  });
+
+  it("keeps built-in safety excludes additive and discovers MDX when enabled", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-additive-excludes-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(root, "custom"), { recursive: true });
+    fs.mkdirSync(path.join(root, "node_modules", "pkg"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "page.mdx"), "# MDX\n", "utf8");
+    fs.writeFileSync(path.join(root, "custom", "skip.md"), "# Custom\n", "utf8");
+    fs.writeFileSync(path.join(root, "node_modules", "pkg", "README.md"), "# Dependency\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, {
+      ...DEFAULT_CONFIG,
+      docs: { include: DEFAULT_CONFIG.docs.include, exclude: ["custom/**"] },
+      index: { ...DEFAULT_CONFIG.index, parseMdx: true, followGitignore: false }
+    });
+
+    expect(files.map((file) => path.relative(root, file).replace(/\\/g, "/"))).toEqual(["docs/page.mdx"]);
+  });
+
+  it("respects include, exclude, max file size, MDX switch, and root gitignore", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "included.md"), "# Included\n", "utf8");
+    fs.writeFileSync(path.join(root, "docs", "ignored.md"), "# Ignored\n", "utf8");
+    fs.writeFileSync(path.join(root, "docs", "large.md"), "# Large\n".repeat(20), "utf8");
+    fs.writeFileSync(path.join(root, "docs", "component.mdx"), "# MDX\n", "utf8");
+    fs.writeFileSync(path.join(root, ".gitignore"), "docs/ignored.md\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, {
+      ...DEFAULT_CONFIG,
+      docs: { include: ["docs/**/*"], exclude: ["**/excluded/**"] },
+      index: { ...DEFAULT_CONFIG.index, maxFileBytes: 80, parseMdx: true, followGitignore: true }
+    });
+
+    const relative = files.map((file) => path.relative(root, file).replace(/\\/g, "/")).sort();
+    expect(relative).toEqual(["docs/component.mdx", "docs/included.md"]);
+  });
+
+  it("does not accept include glob matches outside the project root", async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-scan-contained-"));
+    tempDirs.push(parent);
+    const root = path.join(parent, "root");
+    const outside = path.join(parent, "outside");
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(root, "docs", "included.md"), "# Included\n", "utf8");
+    fs.writeFileSync(path.join(outside, "leaked.md"), "# Outside\n", "utf8");
+
+    const files = await scanMarkdownFiles(root, {
+      ...DEFAULT_CONFIG,
+      docs: { include: ["docs/**/*.md", "../outside/*.md"], exclude: [] }
+    });
+
+    const relative = files.map((file) => path.relative(root, file).replace(/\\/g, "/")).sort();
+    expect(relative).toEqual(["docs/included.md"]);
+  });
+});
+
+describe("database opening", () => {
+  it("does not create a database when opening an existing index is required", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-db-existing-"));
+    tempDirs.push(root);
+
+    expect(() => openExistingDatabase(root)).toThrow(/mdgraph index/);
+    expect(fs.existsSync(databasePath(root))).toBe(false);
+  });
+});
+
+describe("LinkResolver", () => {
+  it("resolves relative links, anchors, aliases, and Windows-style references", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-resolver-"));
+    tempDirs.push(root);
+    const docsDir = path.join(root, "docs");
+    const nestedDir = path.join(docsDir, "nested");
+    fs.mkdirSync(nestedDir, { recursive: true });
+    const indexPath = path.join(docsDir, "index.md");
+    const targetPath = path.join(docsDir, "target.md");
+    const nestedPath = path.join(nestedDir, "child.md");
+    fs.writeFileSync(indexPath, "---\nid: docs-index\ntitle: Docs Index\n---\n# Docs Index\n", "utf8");
+    fs.writeFileSync(targetPath, "# Target Doc\n\n## Target Section\n", "utf8");
+    fs.writeFileSync(nestedPath, "# Child\n", "utf8");
+
+    const documents = [indexPath, targetPath, nestedPath].map((file) => parseMarkdownDocument(root, file));
+    const resolver = new LinkResolver(documents);
+    const child = documents.find((document) => document.relativePath.endsWith("child.md"));
+    const index = documents.find((document) => document.relativePath.endsWith("index.md"));
+
+    expect(child).toBeDefined();
+    expect(index).toBeDefined();
+    expect(resolver.resolveMarkdownUrl("../target.md#target-section", child!)?.sectionId).toBeDefined();
+    expect(resolver.resolveMarkdownUrl(".\\target.md", index!)?.documentId).toBe(documents.find((document) => document.relativePath.endsWith("target.md"))!.id);
+    expect(resolver.resolveDocumentRef("docs-index")?.documentId).toBe(index!.id);
+    expect(resolver.resolveDocumentRef("docs\\target.md")?.documentId).toBe(documents.find((document) => document.relativePath.endsWith("target.md"))!.id);
+    expect(resolver.resolveDocumentRef("missing.md")).toBeUndefined();
+  });
+
+  it("does not resolve ambiguous basename aliases", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-resolver-ambiguous-"));
+    tempDirs.push(root);
+    const firstDir = path.join(root, "docs", "first");
+    const secondDir = path.join(root, "docs", "second");
+    fs.mkdirSync(firstDir, { recursive: true });
+    fs.mkdirSync(secondDir, { recursive: true });
+    const firstPath = path.join(firstDir, "topic.md");
+    const secondPath = path.join(secondDir, "topic.md");
+    fs.writeFileSync(firstPath, "---\nid: first-topic\ntitle: First Topic\n---\n# Topic\n", "utf8");
+    fs.writeFileSync(secondPath, "---\nid: second-topic\ntitle: Second Topic\n---\n# Topic\n", "utf8");
+
+    const documents = [firstPath, secondPath].map((file) => parseMarkdownDocument(root, file));
+    const resolver = new LinkResolver(documents);
+
+    expect(resolver.resolveDocumentRef("topic")).toBeUndefined();
+    expect(resolver.resolveDocumentRef("docs/first/topic")?.documentId).toBe(documents[0].id);
+    expect(resolver.resolveDocumentRef("docs/second/topic")?.documentId).toBe(documents[1].id);
+    expect(resolver.resolveDocumentRef("first-topic")?.documentId).toBe(documents[0].id);
+    expect(resolver.resolveDocumentRef("second-topic")?.documentId).toBe(documents[1].id);
+  });
+
+  it("resolves duplicate heading anchors without overwriting the first canonical anchor", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-resolver-duplicate-anchor-"));
+    tempDirs.push(root);
+    const docsDir = path.join(root, "docs");
+    fs.mkdirSync(docsDir, { recursive: true });
+    const sourcePath = path.join(docsDir, "source.md");
+    const targetPath = path.join(docsDir, "target.md");
+    fs.writeFileSync(sourcePath, "# Source\n\nSee [runtime](./target.md#runtime).\n", "utf8");
+    fs.writeFileSync(targetPath, [
+      "# Target",
+      "",
+      "## Runtime",
+      "First runtime.",
+      "",
+      "## Runtime",
+      "Second runtime.",
+      ""
+    ].join("\n"), "utf8");
+
+    const documents = [sourcePath, targetPath].map((file) => parseMarkdownDocument(root, file));
+    const source = documents.find((document) => document.relativePath.endsWith("source.md"))!;
+    const target = documents.find((document) => document.relativePath.endsWith("target.md"))!;
+    const runtimeSections = target.sections.filter((section) => section.heading === "Runtime");
+    const resolver = new LinkResolver(documents);
+
+    expect(runtimeSections.map((section) => section.anchor)).toEqual(["runtime", "runtime-2"]);
+    expect(resolver.resolveMarkdownUrl("./target.md#runtime", source)?.sectionId).toBe(runtimeSections[0].id);
+    expect(resolver.resolveMarkdownUrl("./target.md#runtime-2", source)?.sectionId).toBe(runtimeSections[1].id);
+    expect(resolver.resolveDocumentRef("./target.md#runtime", source)?.sectionId).toBe(runtimeSections[0].id);
+  });
+});

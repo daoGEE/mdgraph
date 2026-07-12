@@ -1,0 +1,82 @@
+# MDGraph Release Checklist
+
+Use this checklist before publishing an MDGraph release or asking a maintainer to cut one. It complements [CHANGELOG.md](../../CHANGELOG.md), [Output_Contracts.md](Output_Contracts.md), [Public_Contracts.md](Public_Contracts.md), and the task public check.
+
+## Public checks
+
+- Confirm the public package is `@daogee/mdgraph`, the installed binary remains `mdgraph`, and `package.json` / CLI versions match the release tag.
+- Confirm [CHANGELOG.md](../../CHANGELOG.md) has an entry for the release.
+- Review README quick start, requirements, MCP setup, output contracts, public contract labels, and known tradeoffs when public CLI/MCP behavior changed.
+
+## 0.8 contract gate
+
+- Confirm [Public_Contracts.md](Public_Contracts.md) labels every touched public surface as `stable`, `stable-additive`, `experimental`, `reserved`, or `internal`.
+- Confirm focused contract tests cover MCP tool definitions, representative JSON fields, edge kinds, doctor warning shape, config defaults, and schema compatibility guidance.
+- Confirm structured error outputs include a stable `code` and remediation where the command already returns structured errors.
+
+## 0.9 evidence gate
+
+- Confirm [Public_Contracts.md](Public_Contracts.md) labels context recovery fields as `stable-additive`.
+- Confirm context, MCP, and contract tests cover `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, and graph-expansion `edgePath`.
+- Confirm `smoke:cli` exercises a multi-question structured benchmark using repository-owned fixtures.
+- Confirm optional semantic behavior remains experimental unless a separate release explicitly freezes it.
+
+## 1.0 readiness gate
+
+- Confirm known output-shape inconsistencies are either normalized or intentionally documented.
+- Confirm `context --json` and MCP `mdgraph_context.structuredContent` expose recovery fields (`nodeId`, `documentId`, optional `sectionId`, optional `anchor`, and graph-expansion `edgePath`) for agent handoff to `node`, `trace`, and raw Markdown.
+- Confirm Node.js `>=22.5.0` remains the supported floor and the active release was tested on the current Node 22.x line.
+- Confirm Linux and Windows full CI rows pass. Confirm the macOS CI smoke row passes build-output CLI and packed-artifact smoke before 1.0.
+- Run maintainer smoke for platform-specific long-running surfaces that CI intentionally does not automate: `serve --mcp` and `watch` on each target OS where those paths matter.
+- Confirm the 1.0 release notes call out compatibility promises separately from feature additions.
+
+## Command gate
+
+Run from the repository root after dependencies are installed:
+
+```bash
+npm run typecheck
+npm run build
+npm run test:run
+npm run smoke:cli
+npm run smoke:eval
+npm run smoke:pack
+npm run smoke:clean
+node dist/bin/mdgraph.js index --json
+node dist/bin/mdgraph.js doctor --strict --json
+node dist/bin/mdgraph.js status --storage --json
+node dist/bin/mdgraph.js bundle create --profile private --json
+node dist/bin/mdgraph.js bundle verify BUNDLE_DIR_FROM_CREATE_OUTPUT --json
+node dist/bin/mdgraph.js report --json --eval --bundle BUNDLE_DIR_FROM_CREATE_OUTPUT
+node dist/bin/mdgraph.js diff --base HEAD --json
+node dist/bin/mdgraph.js report --json --base HEAD
+node dist/bin/mdgraph.js report --json --benchmark PATH_TO_BENCHMARK_RUN_RECORDS
+npm run task:public-check
+git diff --check
+```
+
+Expected results:
+
+- Typecheck, tests, build, CLI smoke, and pack smoke exit 0.
+- `doctor --strict --json` reports `staleIndex: 0` and no issue counts for the MDGraph repository.
+- `status --storage --json` returns `{ counts, storage }` with database, object, path group, edge kind, high-degree node, and vector sections.
+- `bundle create`, `bundle verify`, and `report --json --eval --bundle` return valid private workflow artifacts for the current repository index.
+- `diff --base` and `report --base` return a documentation graph impact summary without replacing the current index.
+- `report --benchmark` returns paired run-record deltas for a multi-question smoke set, reports incomplete pairs as skipped, and does not require transcripts or agent/model execution.
+- `task:public-check` does not find tracked task artifacts under `docs/tasks/` except the allowed public files.
+- `git diff --check` is clean. On Windows CRLF files, set repository-local `core.whitespace=cr-at-eol` if needed to avoid false positives on unchanged CRLF endings.
+- Keep private or third-party evaluation corpora outside release artifacts and public fixtures.
+- The macOS CI row is smoke-only. It does not replace the full command gate or maintainer checks for MCP server, watcher, and external-corpus behavior.
+
+## Package gate
+
+- Inspect the tarball contents if package metadata or included public docs changed: `npm pack --dry-run`.
+- Confirm the package includes `dist`, `README.md`, `README-ZH.md`, `CHANGELOG.md`, and `LICENSE`.
+- Install the packed tarball globally under a clean temporary prefix and verify `mdgraph --version`, `init`, and one representative query before publishing.
+- Confirm no `.mdgraph/`, task artifact directory, temp output, local database, or external workspace content is included.
+
+## Note text
+
+- Summarize user-visible CLI/MCP behavior changes.
+- Call out output contract changes explicitly.
+- Mention known `node:sqlite` experimental warnings only as non-failing runtime warnings.

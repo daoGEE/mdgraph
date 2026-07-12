@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mdgraph": {
+      "type": "stdio",
+      "command": "mdgraph",
+      "args": [
+        "serve",
+        "--mcp",
+        "--path",
+        "/absolute/path/to/project"
+      ]
+    }
+  }
+}

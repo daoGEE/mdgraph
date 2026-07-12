@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a focused improvement to an AI coding documentation workflow
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow problem
+      description: What does a coding agent or maintainer struggle to do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the user-visible result rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Could existing MDGraph commands, normal file search, or a source-code tool already handle this?
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Project boundaries
+      options:
+        - label: This keeps the core local-first and does not require an LLM or cloud service.
+          required: true
+        - label: This focuses on Markdown documentation rather than turning MDGraph into a general RAG or source-code graph.
+          required: true

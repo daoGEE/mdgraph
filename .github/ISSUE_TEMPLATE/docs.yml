@@ -1,0 +1,34 @@
+name: Documentation or integration feedback
+description: Improve setup instructions, examples, or coding-agent integration
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Quick start
+        - CLI reference
+        - MCP setup
+        - Agent host integration
+        - Architecture or contracts
+        - Chinese documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: confusion
+    attributes:
+      label: What was unclear or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+  - type: input
+    id: host
+    attributes:
+      label: Agent host or environment
+      placeholder: Codex, Claude Code, Cursor, Copilot, generic MCP client
