@@ -13,16 +13,16 @@ MDGraph 采用以下已实现的流水线：扫描器 → 解析器 → 提取/�
 | 提取 | `src/extraction/*` | 将解析后的文档转换为图记录和确定性的实体/边信号。 |
 | 解析 | `src/resolution/link-resolver.ts` | 将 Markdown 和 WikiLink 目标解析为已索引的文档或章节。 |
 | 存储 | `src/db/*` | SQLite 连接、模式、记录替换、增量更新、图查询和存储诊断。 |
-| 查询 | `src/query/*` | 搜索排序、上下文打包和图追踪。 |
+| 查询 | `src/query/*` | 搜索排序、上下文打包、图追踪，以及实验性结构化查询 tokenizer/AST/executor。 |
 | 评估 | `src/evaluation/*` | 检索评估 case、期望记录，以及 search/context/trace 质量的轻量指标。 |
 | Benchmark | `src/benchmark/*` | 结构化 with/without-MDGraph agent run record 解析和 paired delta 聚合。 |
 | Bundle | `src/bundle/*` | 基于 schema/source/config/document hashes 的私有目录图 bundle 创建和校验。 |
 | Reporting | `src/reporting/*` | 面向 CI 的图工作流报告，聚合 counts、storage、doctor、eval、bundle、diff 和 benchmark summary。 |
 | Diff | `src/diff/*` | 基于 Git base ref 的文档图 diff 和 PR impact summary 生成。 |
 | Export/Import | `src/export/*` | 确定性 GraphJSON、Mermaid、Markdown/docs-site 和只读 source bridge adapter。 |
-| 语义 | `src/semantic/*` | 确定性本地向量生成、Float32 向量编解码、provider 状态和余弦评分。 |
+| 语义 | `src/semantic/*` | 可插拔 embedding provider、兼容用 `local-hash`、可选 Ollama 集成、Float32 向量编解码、provider 诊断和余弦评分。 |
 | MCP | `src/mcp/*` | 基于换行符分隔的 JSON-RPC MCP 服务器和工具处理器。 |
-| 监听 | `src/watcher/file-watcher.ts` | 通过 chokidar 实现防抖增量重新索引。 |
+| 监听 | `src/watcher/file-watcher.ts`、`src/watcher/watch-health.ts` | 通过 chokidar 实现防抖增量重新索引，并维护进程内持久健康分类。 |
 | 分析 | `src/analysis/doctor.ts` | 文档健康和治理报告。 |
 
 ## 公开契约边界
@@ -50,11 +50,26 @@ SQLite 数据库存储在 `.mdgraph/graph.db`，由 `src/db/schema.sql` 创建�
 
 1. `scanMarkdownFiles` 从配置中选择候选 Markdown 文件。
 2. `parseMarkdownDocument` 读取前置元数据和 Markdown 结构。
-3. `buildGraphRecords` 创建文档、章节、实体、源引用、块、向量和边。
-4. `GraphRepository.replaceAll` 写入完整重建，或 `replaceDocuments` 更新已更改/已删除的文档。
-5. `indexProject` 比较存储的哈希值与解析后的哈希值，选择全量或增量模式。
+3. `buildGraphRecords` 同步创建确定性的文档、章节、实体、源引用、块和边。
+4. embedding 启用时，`indexProject` 解析 `EmbeddingProvider`；新索引或 provider profile 变化时异步嵌入全部 chunks，profile 匹配的增量索引只嵌入 changed chunks。
+5. `GraphRepository.replaceAll` 写入完整重建，或 `replaceDocuments` 更新已更改/已删除的文档及其 vectors。
+6. `indexProject` 比较已存储 hash 与 vector profile coverage，选择全量或增量模式。
 
-增量模式会删除已更改和已移除文件的文档派生记录，移除对应 FTS 词项，重新插入已更改的记录，并在清理后修剪未引用的全局实体/源引用。完整重建会 optimize 并 vacuum SQLite 数据库，避免旧 FTS 页面和已删除行继续放大磁盘文件。
+向量生成会在 repository write 开始前全部完成，因此 provider 失败时旧 graph 保持不变，不会提交部分 vector coverage。增量模式会删除已更改和已移除文件的文档派生记录，移除对应 FTS 词项，重新插入已更改的记录，并在清理后修剪未引用的全局实体/源引用。完整重建会 optimize 并 vacuum SQLite 数据库，避免旧 FTS 页面和已删除行继续放大磁盘文件。
+
+## 派生关系流程
+
+`relationships derive` 是显式 post-index workflow，不属于普通 indexing 或 watch mode。它要求 doctor content-hash/ID freshness 审计通过且没有 parse failure、已配置的 `semantic-model` provider，以及当前 provider/model/dimensions 的完整 vector coverage；`local-hash` 会被拒绝。实现会有界采样文档 chunk，使用归一化 document centroid 过滤候选，要求多组独立高相似度 section pair，并只保留 reciprocal top-K neighbor。
+
+通过门禁的文档对会变成两条对称、低权重的 `RELATED_TO` edge，使用 `embedding_similarity` provenance；metadata 包含 provider/model identity、algorithm/gate version、threshold、evidence section ID 和 generation time。替换是原子的。Incremental indexing 会删除连接 changed/deleted document 的派生 edge；full rebuild 会删除整个可选层。工作流、安全预算和生命周期见[结构化查询与派生关系](Structured_Query_and_Relationships.md#派生相关文档关系)。
+
+派生 edge 可以参与 graph retrieval、trace 和 structured edge predicate，但会从 doctor orphan/weak-link 的权威链接计数中排除，避免推断结果掩盖缺失的维护链接。
+
+## 实体抽取
+
+`extractEntities` 是确定性、source-aware 的实现。显式 front matter 和 `Defines` 章节创建 definition。普通正文只发射 API route、error code 和形状明确的 config key 等高结构 reference，不会提升宽泛的 PascalCase 单词。独立 inline code 可以识别完整的 Latin/CJK symbol；fenced code 中的裸 symbol 则限制在声明和类型引用上下文。Unicode-aware pattern 覆盖 CJK API path、分段 config key 和 function identifier；route 边界避免从 file path 中截取伪 route。
+
+`entities.stopEntities` 会抑制所有 entity kind 的推断 reference，而作者显式声明的 definition 继续保持权威性。这一层是可解释的启发式规则，不是通用 NER 或源码语言 AST。信号策略和边界见[检索与上下文](Retrieval_and_Context.md#确定性实体抽取)。
 
 ## 存储诊断
 
@@ -92,16 +107,20 @@ Diff report 包含 Markdown 文档新增、修改、删除、Git 识别的 renam
 
 - FTS5 块命中，包含连续中文/日文/韩文文本的轻量 CJK n-gram 命中。
 - 精确实体匹配。
-- 可选的本地语义向量匹配。
+- 可选 embedding 向量匹配。
 - 匹配实体周围的图邻居。
 
 当同一文档或章节通过多条路径命中时，搜索会在 definition、FTS 和可选 semantic 通道之间应用 reciprocal rank fusion（RRF），再保留最高基础分，同时合并主要命中原因和匹配实体，避免丢失来源解释。每个融合结果都会保留可解释的 `RRF fusion (...)` reason。
 
-然后 `buildContext` 从排序后的搜索章节开始，通过非包含边执行有界图扩展，在重复同一文档章节前优先保持跨文档多样性，在字符预算下打包选定的章节，并包含原因，如 FTS 命中、语义命中、精确实体匹配或图边遍历路径。
+同步 `searchGraph`、`buildContext` 和 `evaluateRetrieval` API 保留 1.0 行为，可在进程内执行 `local-hash`。对应的异步 API 会解析 Ollama 等外部 provider，CLI 与 MCP 查询路径使用异步版本。provider 不可用、超时、响应非法、模型缺失或 vector coverage 不完整时，会降级到 keyword/entity/graph retrieval，并返回 additive `semanticDiagnostic`；CLI 文本和非 explain JSON 命令还会把诊断写到 stderr。
 
-当请求 `context --debug` 时，上下文构建还会报告 seed nodes、visited nodes、expanded edges、跳过原因、候选数量、MMR-style 跨文档打包诊断和预算截断计数。这些诊断不是图事实，只用于解释上下文打包和评估检索质量。
+然后 `buildContext` 从排序后的搜索章节开始，通过非包含边执行有界图扩展，在字符预算下打包选定的章节，并包含原因，如 FTS 命中、语义命中、精确实体匹配或图边遍历路径。兼容默认策略按文档轮询排序候选。可选 `mmr` 最大化 query relevance 并惩罚冗余；两个候选都有当前 provider 已存向量时使用向量相似度，否则回退到确定性的 Unicode token Jaccard，并剪除同文档近重复项，同时保留每个文档的首个候选。
 
-`evaluateRetrieval` 会针对已索引项目运行仓库自有的 alpha 或 CJK evaluation cases。它复用 `searchGraph`、`buildContext` 和 `traceNodes`，并报告预期文档召回、预期章节召回、上下文精度、trace 成功率、延迟、返回字符预算、上下文多样性、reason 覆盖率、RRF 通道、query mode 和可选语义 reranker 状态。evaluation 输出是度量辅助，不是学习式 ranking model，也不能替代聚焦回归测试。
+每个 context 结果都会包含 additive packing metadata。当请求 `context --debug` 时，上下文构建还会报告 seed nodes、visited nodes、expanded edges、跳过原因、候选数量、策略/相似度选择、逐项 query relevance、redundancy penalty 和 MMR score、冗余剪枝及预算截断计数。这些诊断不是图事实，只用于解释上下文打包和评估检索质量。
+
+实验性结构化查询路径与自然语言 search 分离。`structured-query.ts` 对有界输入进行 tokenize，并校验 typed boolean AST。`GraphRepository` 从 closed field/operator set 把文档、tag、日期和 outgoing-edge predicate 编译为参数化 SQLite operation。除非 AST 包含 doctor 派生 health predicate，否则 `structured-query-executor.ts` 使用直接 SQL 路径；health query 会把参数化原子 document-id set 与 fresh doctor report 合并，再对原始 boolean tree 求值。索引时会把源文件 mtime 写入已有 `documents.updated_at` 列，因此日期治理查询无需 schema migration。
+
+`evaluateRetrieval` 与 `evaluateRetrievalAsync` 会针对已索引项目运行仓库自有的 alpha 或 CJK evaluation cases。它们复用对应的 search/context 路径和 `traceNodes`，并报告预期文档召回、预期章节召回、上下文精度、trace 成功率、延迟、返回字符预算、上下文多样性、reason 覆盖率、RRF 通道、query mode、可选语义 reranker 状态和异步 provider 诊断。evaluation 输出是度量辅助，不是学习式 ranking model，也不能替代聚焦回归测试。
 
 `generateBenchmarkReport` 只消费结构化 `AgentRunRecord` JSON。它按 `questionId` 配对一个 `with_mdgraph` 和一个 `without_mdgraph` record，将不完整或重复 pair 报告为 skipped，并计算 file reads、searches、tool calls、MDGraph calls、字符/token 预算、延迟、raw-file fallback 和引用正确率 delta。它不解析 transcript、不调用模型，也不托管 agent run。
 
@@ -109,16 +128,17 @@ Diff report 包含 Markdown 文档新增、修改、删除、Git 识别的 renam
 
 ## MCP 边界
 
-MCP 服务器有意仅暴露五个工具。工具输出以文本为主且兼容 JSON，以便代理可以直接使用，无需先检查 SQLite 数据库或读取原始文件。服务器会绑定到项目根：initialize root 和工具 `projectPath` 必须位于服务根之内。
+MCP 服务器有意仅暴露五个工具。Search/context 通过 provider-aware 异步 handler 调度，node/trace/status 保留同步行为。工具输出以文本为主且兼容 JSON，以便代理可以直接使用，无需先检查 SQLite 数据库或读取原始文件。semantic 降级会增加文本提示和结构化诊断，但不会把仍然可用的 lexical/graph 结果变成 MCP error。服务器会绑定到项目根：initialize root 和工具 `projectPath` 必须位于服务根之内。
 
 ## 当前权衡
 
-- 语义提供者是确定性的和本地的，但它是轻量级的哈希嵌入，而非高质量的语言模型嵌入。配置了不支持的 provider 时会降级到 FTS5 和 graph search；`semantic status` 会报告 provider 支持、向量覆盖率、存储格式和重新索引指引。
-- 监听模式在文件更改时更新 SQLite；长时间运行的 MCP 新鲜度通过每次调用时工具打开当前数据库状态来实现。
+- `local-hash` 为兼容保留，仍是确定性的词法 feature hash，并非语言模型 embedding。Ollama 是第一个可选 `semantic-model` provider，需要单独运行本地服务和模型。不支持或不可用的 provider 会降级到 FTS5 和 graph search；`semantic status` 会报告 capability、runtime availability、vector coverage、存储格式和重新索引指引。
+- 结构化 `query` 是 experimental，覆盖已记录的存储字段、tags、outgoing edges 和选定的 doctor health 类型。任意 front matter key、incoming-edge predicate、aggregation、join 和 MCP structured filter 不属于当前实现。
+- 监听模式在文件更改时更新 SQLite，并保留 `starting | healthy | degraded | failed` 健康状态、最近成功索引、最近错误和覆盖可靠性。启动注册错误是 fatal；索引错误可在后续成功索引后恢复；运行期资源失败在重启前保持 degraded。集成 MCP 通过 `mdgraph_status` 暴露快照。原生事件仍是默认值，`watch --poll` 和 `serve --mcp --watch-poll` 是显式的较高成本 fallback。
 - Doctor 检查是基于规则的警告。它们会先比较当前文件与索引中的文档 hash 和 id；陈旧索引会返回只读的新鲜度诊断，而不是混合时态的健康结论。
 - 存储诊断通过 `status --storage` 暴露；它们不是图事实，也不会扩展 MCP 工具面。
 - 私有 bundle artifact 是本地工作流 artifact，不是公开导出。公开安全脱敏和 zip packaging 不属于当前实现。
 - Benchmark report 只来自显式结构化 records 的聚合度量；完整 transcript、hosted analytics 和 agent runtime capture 不属于 MDGraph。
 - 互操作 adapter 是只读导向的。GraphJSON verify、Mermaid/Markdown/docs-site export 和 source bridge report 不会把外部 graph 合并进主 SQLite index。
-- `SAME_AS`、`RELATED_TO` 和 `CONTRADICTS` 是公共模型中保留的边类型。确定性 MVP 在索引期间不发出这些类型；类似矛盾的信号目前由 `doctor` 报告，而不是作为图边插入。
-- 当前实现优先考虑紧凑的 MVP，而非广泛的 Markdown/MDX 方言支持。
+- `RELATED_TO` 是实验性派生 edge，只能由显式、provider-gated 的流程发射，普通确定性 indexing 永远不会发射它。`SAME_AS` 和 `CONTRADICTS` 继续保留；类似矛盾的信号仍由 `doctor` 报告，而不是作为 graph edge 插入。
+- 当前实现优先考虑紧凑、确定性的核心，而非广泛的 Markdown/MDX 方言支持。

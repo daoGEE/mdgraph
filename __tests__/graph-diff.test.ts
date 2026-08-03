@@ -17,7 +17,7 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("v0.6.2 graph diff", () => {
+describe("graph diff", () => {
   it("reports PR documentation graph impact without changing the current index", async () => {
     const root = makeTempRoot("mdgraph-diff-");
     createFixtureDocs(root);

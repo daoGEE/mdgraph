@@ -2,9 +2,10 @@ import { performance } from "node:perf_hooks";
 import type { EdgeKind, SearchQueryMode, SearchResult } from "../types.js";
 import type { GraphRepository } from "../db/repositories.js";
 import type { MDGraphConfig } from "../types.js";
-import type { ContextResult } from "../query/context-builder.js";
-import { CONTEXT_PACKING_STRATEGY, buildContext } from "../query/context-builder.js";
-import { explainSearchGraph } from "../query/search.js";
+import type { ContextPackingStrategy, ContextResult } from "../query/context-builder.js";
+import { CONTEXT_PACKING_STRATEGY, buildContext, buildContextFromSearchResults } from "../query/context-builder.js";
+import { explainSearchGraph, explainSearchGraphAsync, type SearchExplanation } from "../query/search.js";
+import type { EmbeddingDiagnostic } from "../semantic/provider.js";
 import { traceNodes, type TraceResult } from "../query/trace.js";
 import { slugifyHeading } from "../utils/text.js";
 
@@ -72,8 +73,9 @@ export interface EvaluationCaseResult {
       searchFusion: "rrf";
       searchChannels: string[];
       semanticActive: boolean;
-      optionalReranker: "none" | "local-hash";
-      contextPackingStrategy: typeof CONTEXT_PACKING_STRATEGY;
+      optionalReranker: string;
+      semanticDiagnostic?: EmbeddingDiagnostic;
+      contextPackingStrategy: ContextPackingStrategy;
     };
   };
   metrics: EvaluationMetrics;
@@ -94,12 +96,13 @@ export interface EvaluationSummary {
 export interface EvaluationRankingReport {
   queryMode: SearchQueryMode;
   searchFusion: "rrf";
-  contextPackingStrategy: typeof CONTEXT_PACKING_STRATEGY;
-  optionalReranker: "none" | "local-hash";
+  contextPackingStrategy: ContextPackingStrategy;
+  optionalReranker: string;
   semanticActiveCases: number;
   searchChannels: string[];
   rankingReasonCoverage: boolean;
   averageContextDiversity: number;
+  semanticDiagnostics?: EmbeddingDiagnostic[];
 }
 
 export interface EvaluationReport {
@@ -367,13 +370,46 @@ function evaluateCase(
 ): EvaluationCaseResult {
   const start = performance.now();
   const searchExplanation = explainSearchGraph(repository, config, evaluationCase.query, limit, { queryMode });
-  const searchResults = searchExplanation.results;
   const context = buildContext(repository, config, evaluationCase.query, { debug: true, searchOptions: { queryMode } });
   const trace = evaluationCase.trace
     ? traceNodes(repository, evaluationCase.trace.from, evaluationCase.trace.to, evaluationCase.trace.depth ?? config.search.maxDepth)
     : undefined;
-  const latencyMs = performance.now() - start;
+  return evaluationCaseResult(repository, evaluationCase, queryMode, searchExplanation, context, trace, performance.now() - start);
+}
 
+async function evaluateCaseAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  evaluationCase: EvaluationCase,
+  limit: number,
+  queryMode: SearchQueryMode
+): Promise<EvaluationCaseResult> {
+  const start = performance.now();
+  const searchExplanation = await explainSearchGraphAsync(repository, config, evaluationCase.query, limit, { queryMode });
+  const context = buildContextFromSearchResults(
+    repository,
+    config,
+    evaluationCase.query,
+    searchExplanation.results,
+    { debug: true, searchOptions: { queryMode } },
+    searchExplanation.semanticDiagnostic
+  );
+  const trace = evaluationCase.trace
+    ? traceNodes(repository, evaluationCase.trace.from, evaluationCase.trace.to, evaluationCase.trace.depth ?? config.search.maxDepth)
+    : undefined;
+  return evaluationCaseResult(repository, evaluationCase, queryMode, searchExplanation, context, trace, performance.now() - start);
+}
+
+function evaluationCaseResult(
+  repository: GraphRepository,
+  evaluationCase: EvaluationCase,
+  queryMode: SearchQueryMode,
+  searchExplanation: SearchExplanation,
+  context: ContextResult,
+  trace: TraceResult | undefined,
+  latencyMs: number
+): EvaluationCaseResult {
+  const searchResults = searchExplanation.results;
   const searchDocuments = unique(searchResults.map((result) => result.document.path));
   const contextItems = context.items.map((item) => ({ path: item.path, heading: item.heading, reason: item.reason }));
   const matchedEntities = unique(searchResults.flatMap((result) => result.matchedEntities.map((entity) => entity.name)));
@@ -416,6 +452,7 @@ function evaluateCase(
         searchChannels: searchExplanation.ranking.channels,
         semanticActive: searchExplanation.semanticActive,
         optionalReranker: searchExplanation.ranking.optionalReranker,
+        semanticDiagnostic: searchExplanation.semanticDiagnostic,
         contextPackingStrategy: context.debug?.packingStrategy ?? CONTEXT_PACKING_STRATEGY
       }
     },
@@ -465,6 +502,29 @@ function calculateMetrics(input: {
   };
 }
 
+export async function evaluateRetrievalAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  options: { cases?: EvaluationCase[]; limit?: number; querySet?: string; queryMode?: SearchQueryMode } = {}
+): Promise<EvaluationReport> {
+  const querySet = options.querySet ?? "alpha";
+  const queryMode = options.queryMode ?? "auto";
+  const cases = options.cases ?? evaluationCasesForQuerySet(querySet);
+  const limit = options.limit ?? config.search.defaultLimit;
+  const results: EvaluationCaseResult[] = [];
+  for (const evaluationCase of cases) {
+    results.push(await evaluateCaseAsync(repository, config, evaluationCase, limit, queryMode));
+  }
+  return {
+    querySet,
+    limit,
+    ranking: summarizeRanking(results, queryMode),
+    generatedAt: new Date().toISOString(),
+    summary: summarize(results),
+    cases: results
+  };
+}
+
 function summarize(results: EvaluationCaseResult[]): EvaluationSummary {
   const count = results.length || 1;
   return {
@@ -484,16 +544,27 @@ function summarizeRanking(results: EvaluationCaseResult[], queryMode: SearchQuer
   const count = results.length || 1;
   const rerankers = results.map((result) => result.observed.ranking.optionalReranker);
   const channels = results.flatMap((result) => result.observed.ranking.searchChannels);
-  return {
+  const semanticDiagnostics = uniqueDiagnostics(results.flatMap((result) => (
+    result.observed.ranking.semanticDiagnostic ? [result.observed.ranking.semanticDiagnostic] : []
+  )));
+  const report: EvaluationRankingReport = {
     queryMode,
     searchFusion: "rrf",
     contextPackingStrategy: CONTEXT_PACKING_STRATEGY,
-    optionalReranker: rerankers.includes("local-hash") ? "local-hash" : "none",
+    optionalReranker: rerankers.find((reranker) => reranker !== "none") ?? "none",
     semanticActiveCases: results.filter((result) => result.observed.ranking.semanticActive).length,
     searchChannels: [...new Set(channels)].sort(),
     rankingReasonCoverage: results.every((result) => result.metrics.rankingReasonCoverage),
     averageContextDiversity: average(results.map((result) => result.metrics.contextDiversity), count)
   };
+  return semanticDiagnostics.length ? { ...report, semanticDiagnostics } : report;
+}
+
+function uniqueDiagnostics(diagnostics: EmbeddingDiagnostic[]): EmbeddingDiagnostic[] {
+  return [...new Map(diagnostics.map((diagnostic) => [
+    `${diagnostic.provider}:${diagnostic.code}:${diagnostic.message}`,
+    diagnostic
+  ])).values()];
 }
 
 function casePassed(metrics: EvaluationMetrics): boolean {

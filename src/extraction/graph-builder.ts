@@ -13,7 +13,6 @@ import type {
 } from "../types.js";
 import { EDGE_WEIGHTS } from "../types.js";
 import { LinkResolver } from "../resolution/link-resolver.js";
-import { embedTextLocal, supportsLocalEmbedding } from "../semantic/local-embedding.js";
 import { stableId } from "../utils/id.js";
 import { estimateTokens, normalizeEntityName, normalizePath } from "../utils/text.js";
 import { type ExtractedEntity, extractEntities, inferEntityKind } from "./entity-extractor.js";
@@ -27,10 +26,8 @@ export function buildGraphRecords(documents: ParsedDocument[], config: MDGraphCo
   const entities: GraphEntity[] = [];
   const sourceRefs: SourceRef[] = [];
   const edges: GraphEdge[] = [];
-  const vectors: GraphRecordSet["vectors"] = [];
   const entityByKey = new Map<string, GraphEntity>();
   const sourceRefByPath = new Map<string, SourceRef>();
-  const shouldEmbed = supportsLocalEmbedding(config);
 
   for (const document of documents) {
     graphDocuments.push({
@@ -41,7 +38,7 @@ export function buildGraphRecords(documents: ParsedDocument[], config: MDGraphCo
       status: document.frontmatter.status ?? "active",
       hash: document.hash,
       trustTier: document.frontmatter.trust_tier ?? "authored",
-      updatedAt: undefined,
+      updatedAt: document.updatedAt,
       indexedAt: now,
       metadata: {
         declaredTrustTier: document.frontmatter.trust_tier,
@@ -63,16 +60,6 @@ export function buildGraphRecords(documents: ParsedDocument[], config: MDGraphCo
         metadata: { heading: section.heading, anchor: section.anchor }
       };
       chunks.push(chunk);
-      if (shouldEmbed) {
-        vectors.push({
-          chunkId: chunk.id,
-          provider: config.embedding.provider,
-          model: config.embedding.model,
-          dimensions: config.embedding.dimensions,
-          vector: embedTextLocal(chunk.content, config.embedding.dimensions),
-          createdAt: now
-        });
-      }
       edges.push(makeEdge(section.id, chunk.id, "CONTAINS", "heading", 1, now));
     }
 
@@ -117,7 +104,7 @@ export function buildGraphRecords(documents: ParsedDocument[], config: MDGraphCo
     sourceRefs: dedupeById(sourceRefs),
     edges: dedupeEdges(edges),
     chunks: dedupeById(chunks),
-    vectors: dedupeVectors(vectors)
+    vectors: []
   };
 }
 
@@ -228,8 +215,4 @@ function dedupeById<T extends { id: string }>(items: T[]): T[] {
 
 function dedupeEdges(edges: GraphEdge[]): GraphEdge[] {
   return [...new Map(edges.map((edge) => [`${edge.fromId}:${edge.toId}:${edge.kind}:${edge.provenance}`, edge])).values()];
-}
-
-function dedupeVectors(vectors: GraphRecordSet["vectors"]): GraphRecordSet["vectors"] {
-  return [...new Map(vectors.map((vector) => [vector.chunkId, vector])).values()];
 }

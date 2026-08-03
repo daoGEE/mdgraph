@@ -27,3 +27,5 @@ GitHub.copilot-chat/
 debug-logs/
 chat-session-resources/
 .VSCode/
+/tests
+.DS_Store

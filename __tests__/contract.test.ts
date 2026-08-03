@@ -15,7 +15,7 @@ import { buildContext } from "../src/query/context-builder.js";
 import { explainSearchGraph } from "../src/query/search.js";
 import { traceNodes } from "../src/query/trace.js";
 import { semanticStatusReport } from "../src/semantic/status.js";
-import { EDGE_WEIGHTS, RESERVED_EDGE_KINDS } from "../src/types.js";
+import { DERIVED_EDGE_KINDS, EDGE_WEIGHTS, RESERVED_EDGE_KINDS } from "../src/types.js";
 import { createFixtureDocs } from "./fixtures.js";
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -55,7 +55,7 @@ function runCli(args: string[], options: { cwd?: string; expectExit?: number } =
   };
 }
 
-describe("0.9 public contracts", () => {
+describe("public contracts", () => {
   it("keeps MCP tool definitions stable and closed", () => {
     expect(tools.map((tool) => tool.name)).toEqual([
       "mdgraph_search",
@@ -78,7 +78,7 @@ describe("0.9 public contracts", () => {
     expect(toolContract("mdgraph_status")).not.toHaveProperty("required");
   });
 
-  it("keeps edge kinds, reserved edge kinds, and doctor warning codes explicit", () => {
+  it("keeps edge kinds, derived/reserved lifecycle, and doctor warning codes explicit", () => {
     expect(Object.keys(EDGE_WEIGHTS)).toEqual([
       "CONTAINS",
       "DEFINES",
@@ -93,7 +93,9 @@ describe("0.9 public contracts", () => {
       "RELATED_TO",
       "CONTRADICTS"
     ]);
-    expect(RESERVED_EDGE_KINDS).toEqual(["SAME_AS", "RELATED_TO", "CONTRADICTS"]);
+    expect(DERIVED_EDGE_KINDS).toEqual(["RELATED_TO"]);
+    expect(RESERVED_EDGE_KINDS).toEqual(["SAME_AS", "CONTRADICTS"]);
+    expect([...DERIVED_EDGE_KINDS].every((kind) => Object.hasOwn(EDGE_WEIGHTS, kind))).toBe(true);
     expect([...RESERVED_EDGE_KINDS].every((kind) => Object.hasOwn(EDGE_WEIGHTS, kind))).toBe(true);
 
     expect(DOCTOR_WARNING_CODES).toEqual([
@@ -269,7 +271,7 @@ describe("0.9 public contracts", () => {
   });
 });
 
-describe("1.0 contract-freeze surfaces", () => {
+describe("contract freeze", () => {
   it("registers the frozen CLI command names via the built binary", () => {
     const result = runCli(["help"], { expectExit: 0 });
     const registered = new Set<string>();

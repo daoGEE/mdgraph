@@ -8,7 +8,7 @@ source_refs:
 
 # MDGraph Agent Integration
 
-This guide is the shared 0.3 integration contract for coding agents. Host-specific setup should stay thin: start the same MCP server, expose the same five tools, and teach the agent when to query MDGraph before reading Markdown files directly.
+This guide is the shared integration contract for coding agents. Host-specific setup should stay thin: start the same MCP server, expose the same five tools, and teach the agent when to query MDGraph before reading Markdown files directly.
 
 For active documentation editing sessions, use `serve --mcp`; the same MCP process keeps the local graph fresh by default.
 

@@ -29,6 +29,7 @@ jobs:
 
       - name: Verify
         run: |
+          npm run docs:check
           npm run typecheck
           npm run build
           npm run test:run
@@ -43,7 +44,7 @@ jobs:
 
       - name: Preview package on manual runs
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: npm pack --dry-run
+        run: npm pack --dry-run --json
 
       - name: Publish to npm with OIDC
         if: ${{ github.event_name == 'push' }}

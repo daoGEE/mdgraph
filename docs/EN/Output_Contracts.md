@@ -62,8 +62,11 @@ The text form prints the same workflow groups for humans. `usage` does not read 
 
 - `query`, `limit`, `queryMode`, `entityCandidates`, `ftsQuery`, `semanticEnabled`, and `semanticActive`.
 - `ranking`: `fusion`, `fusionK`, `channels`, and `optionalReranker`.
+- `semanticDiagnostic`: optional provider fallback details with `code`, `provider`, `message`, and `degraded: true`.
 - `matchedEntities`: entity names, kinds, and document frequencies used by ranking diagnostics.
 - `results`: the same search result records returned by `search --json`.
+
+When semantic retrieval is requested but cannot run, `search` still returns FTS5/entity/graph results. The CLI writes the fallback diagnostic to stderr so the non-explain `search --json` array remains compatible.
 
 ## `context --json`
 
@@ -72,6 +75,8 @@ The text form prints the same workflow groups for humans. `usage` does not read 
 - `query`: original query text.
 - `maxChars`: configured context budget.
 - `usedChars`: packed character count.
+- `packing`: additive packing metadata with `strategy`; opt-in MMR also reports `similarity`, `mmrLambda`, and optional `redundancySkippedItems`.
+- `semanticDiagnostic`: optional provider fallback details; absent when semantic retrieval was not requested or completed normally.
 - `items`: context items with `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath`, optional `sourceRefs`, optional `riskNotes`, and `content`.
 
 `riskNotes` can include lifecycle/trust cautions and deterministic content-risk notes such as prompt-injection text, active HTML/data URIs, or hidden Unicode format characters.
@@ -83,8 +88,36 @@ The text form prints the same workflow groups for humans. `usage` does not read 
 - `seedNodes`, `visitedNodes`, and `expandedEdges`.
 - `skippedVisitedNodes`, `skippedByNodeLimit`, and `skippedByDepth`.
 - `candidateCount`, `directCandidates`, and `expandedCandidates`.
-- `packingStrategy`, `packedItems`, `packedUniqueDocuments`, and `packingDiversityRatio`.
-- `budgetTruncatedItems` and `budgetSkippedItems`.
+- `packingStrategy`, optional `packingSimilarity`, optional `mmrLambda`, optional per-item `packingSelections`, `packedItems`, `packedUniqueDocuments`, and `packingDiversityRatio`. Each MMR selection reports `nodeId`, `path`, `queryRelevance`, `redundancyPenalty`, `mmrScore`, and `similaritySource`.
+- `budgetTruncatedItems`, `budgetSkippedItems`, and optional `redundancySkippedItems`.
+
+The compatibility default is `mmr-style-document-round-robin`. `--packing mmr` is opt-in and may be tuned with `--mmr-lambda <0..1>`; missing stored vectors fall back to deterministic lexical Jaccard similarity.
+
+## `query --json` (experimental)
+
+`mdgraph query <expression> --json` returns:
+
+- `query`: original structured expression.
+- `ast`: validated expression tree plus `orderBy` and `limit`.
+- `execution`: `strategy` (`parameterized-sql` or `parameterized-hybrid-doctor`), ordered `stages`, `parameterCount`, and `doctorHealthEvaluated`.
+- `total`, `returned`, and `truncated`: match and limit diagnostics.
+- `items`: entries with `document`, `reason`, `predicateFields`, and execution `provenance`.
+
+`document` follows `GraphDocument`, including optional `updatedAt`, which is the source Markdown mtime captured during indexing. Health predicates fail when the index is stale. This output is experimental and may evolve without changing the stable `search` contract.
+
+## `relationships derive --json` (experimental)
+
+`mdgraph relationships derive --json` returns:
+
+- `algorithmVersion`, `generatedAt`, `provider`, `model`, and `dimensions`.
+- `options`: effective `threshold`, `maxNeighbors`, `minEvidence`, and `dryRun`.
+- `qualityGate`: gate ID, `passed`, and named runtime checks.
+- `corpus`: document/chunk/vector coverage, sampling, pair-evaluation, and vector-comparison diagnostics.
+- `relationships`: canonical document pairs with confidence and independent chunk/section evidence.
+- `relationshipPairs` and `directedEdges`.
+- `mutation`: `dryRun`, `removed`, and `inserted` counts.
+
+The command fails before mutation for stale indexes, lexical-hash providers, incomplete current-profile vector coverage, unsafe options, or exceeded computation budgets. A successful non-dry run atomically replaces `RELATED_TO/embedding_similarity` edges. This output is experimental and does not change stable index, search, GraphJSON, or MCP contracts.
 
 ## `node --json`
 
@@ -113,14 +146,14 @@ When no node is found, it returns:
 
 - `querySet`: `alpha` by default or `cjk` when `--query-set cjk` is provided.
 - `limit`: search result limit used per case.
-- `ranking`: query mode, RRF search fusion, context packing strategy, optional reranker status, semantic-active case count, search channels, ranking reason coverage, and average context diversity.
+- `ranking`: query mode, RRF search fusion, context packing strategy, optional reranker status, semantic-active case count, search channels, ranking reason coverage, average context diversity, and optional deduplicated `semanticDiagnostics`.
 - `generatedAt`: ISO timestamp for the evaluation run.
 - `summary`: `cases`, `passed`, `failed`, `averageTopKDocumentRecall`, `averageExpectedSectionRecall`, `averageContextPrecision`, `averageContextDiversity`, `averageLatencyMs`, and `averageReturnedChars`.
 - `cases`: per-case results with `id`, `query`, `passed`, `expected`, `observed`, and `metrics`.
 
-Per-case `expected` includes expected documents, sections, entities, edge kinds, and source refs. Per-case `observed` includes ranked search document paths, context item paths/headings/reasons, matched entities, resolved entities, resolved source refs, observed edge kinds, optional trace results, and ranking diagnostics. Per-case `metrics` includes top-K document recall, expected-section recall, context precision, entity recall, source-ref recall, edge-kind coverage, trace success, latency, returned characters, budget fit, fanout, reason coverage, ranking reason coverage, and context diversity.
+Per-case `expected` includes expected documents, sections, entities, edge kinds, and source refs. Per-case `observed` includes ranked search document paths, context item paths/headings/reasons, matched entities, resolved entities, resolved source refs, observed edge kinds, optional trace results, and ranking diagnostics with an optional `semanticDiagnostic`. Per-case `metrics` includes top-K document recall, expected-section recall, context precision, entity recall, source-ref recall, edge-kind coverage, trace success, latency, returned characters, budget fit, fanout, reason coverage, ranking reason coverage, and context diversity.
 
-`mdgraph eval --path <project> --json` evaluates an explicit local project path. It does not add MCP tools and does not index automatically; run `mdgraph index` first for the target project. `mdgraph eval --query-set cjk --path <project> --json` uses repository-owned Chinese/Japanese expected records to measure CJK retrieval quality with the lightweight CJK n-gram preprocessing baseline. `mdgraph eval --query-mode semantic --json` requests optional semantic search and reports whether the local semantic reranker was active.
+`mdgraph eval --path <project> --json` evaluates an explicit local project path. It does not add MCP tools and does not index automatically; run `mdgraph index` first for the target project. `mdgraph eval --query-set cjk --path <project> --json` uses repository-owned Chinese/Japanese expected records to measure CJK retrieval quality with the lightweight CJK n-gram preprocessing baseline. `mdgraph eval --query-mode semantic --json` requests optional semantic search and reports whether the configured semantic provider was active.
 
 ## `export graphjson --json`
 
@@ -144,7 +177,7 @@ The structural profile excludes chunks, chunk content, section content, vectors,
 - `warnings`: non-fatal compatibility notes.
 - `format`, `formatVersion`, `schemaVersion`, `graphHash`, `counts`, and `exportedCounts` when readable.
 
-The command exits non-zero when `valid` is `false`. GraphJSON merge import is not supported in 0.7. Oversized or deeply nested GraphJSON files are rejected before verification.
+The command exits non-zero when `valid` is `false`. GraphJSON merge import is not supported. Oversized or deeply nested GraphJSON files are rejected before verification.
 
 ## `export mermaid trace --json`
 
@@ -188,7 +221,7 @@ The bridge reads only an explicit MDGraph JSON artifact with a `files` array con
 - `manifestPath`: absolute path to `manifest.json`.
 - `manifest`: bundle manifest with `format`, `formatVersion`, `schemaVersion`, `mdgraphVersion`, `createdAt`, `visibility`, `sourceHash`, `configHash`, `provenance`, `counts`, `documents`, and optional `reports`.
 
-The private bundle contains `manifest.json`, `graph.db`, `config.json`, and a `reports/status-storage.json` snapshot. `sourceHash` is derived from canonical config plus sorted document path/hash records; it does not include Markdown body content or the absolute project root. Public or sanitized bundle profiles are not supported in 0.6.
+The private bundle contains `manifest.json`, `graph.db`, `config.json`, and a `reports/status-storage.json` snapshot. `sourceHash` is derived from canonical config plus sorted document path/hash records; it does not include Markdown body content or the absolute project root. Public or sanitized bundle profiles are not supported.
 
 ## `bundle verify --json`
 
@@ -254,6 +287,7 @@ Diff only compares Markdown graph records, source refs, and doctor warning codes
 - `projectRoot`.
 - `state`: `disabled`, `not_indexed`, `ready`, `unsupported_provider`, or `needs_reindex`.
 - `enabled`, `provider`, `model`, `dimensions`, and `providerSupported` for the configured embedding provider.
+- `capability`: `lexical-hash`, `semantic-model`, or `unknown`; `runtimeStatus`: `available`, `unavailable`, `model_missing`, `unchecked`, or `disabled`; optional `runtimeReason` when a runtime check fails.
 - `indexed`, `chunks`, `vectors`, `vectorStorageFormat`, and `indexedProviders`.
 - `guidance`: actionable next steps such as running `mdgraph index --semantic`, re-embedding after provider changes, or falling back to FTS5 and graph search for unsupported providers.
 

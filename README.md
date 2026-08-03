@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
-<a href="./README-ZH.md">简体中文</a> · <a href="./docs/EN/Architecture.md">Architecture</a> · <a href="./docs/EN/Agent_Integration.md">Agent Integration</a> · <a href="./docs/EN/Public_Contracts.md">Public Contracts</a> · <a href="./docs/EN/Output_Contracts.md">Output Contracts</a>
+<a href="./README-ZH.md">简体中文</a> · <a href="./docs/EN/README.md">Documentation</a> · <a href="./docs/EN/Architecture.md">Architecture</a> · <a href="./docs/EN/Agent_Integration.md">Agent Integration</a> · <a href="./docs/EN/Public_Contracts.md">Public Contracts</a>
 
 </div>
 
@@ -119,6 +119,7 @@ mdgraph status --freshness --path /your/project
 # Search and context-pack from the CLI
 mdgraph search --path /your/project "authentication timeout"
 mdgraph context --path /your/project "why does RedisTimeoutError affect login"
+mdgraph context --packing mmr --debug --path /your/project "why does RedisTimeoutError affect login"
 
 # Resolve one node or trace a graph path
 mdgraph node --path /your/project "AuthService"
@@ -128,11 +129,58 @@ mdgraph trace --path /your/project "AuthService" "RedisTimeoutError"
 mdgraph doctor --path /your/project
 mdgraph doctor --since origin/main --fail-on warn --json --path /your/project
 
+# Experimental structured governance query
+mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY updated DESC'
+
+# Experimental provider-gated related-document layer
+mdgraph relationships derive --dry-run --json --path /your/project
+mdgraph relationships derive --threshold 0.86 --json --path /your/project
+
 # Agent-friendly workflow guide
 mdgraph usage --path /your/project
 ```
 
 Use `mdgraph help` or `mdgraph help <command>` for the full CLI reference.
+
+True MMR packing is opt-in; document round-robin remains the compatibility default. See [Retrieval and Context](./docs/EN/Retrieval_and_Context.md). Watcher polling is also explicit (`watch --poll` or `serve --mcp --watch-poll`) because it can increase I/O and CPU use; see [Operations](./docs/EN/Operations.md).
+
+The experimental `query` command provides a bounded, parameterized DSL for document governance without changing `search` or the five-tool MCP surface.
+
+The experimental `relationships derive` command creates low-weight `RELATED_TO` edges only from a fresh, complete semantic-model index after independent-evidence and reciprocal-neighbor gates pass. It never runs automatically during indexing or watch mode. Both experimental workflows are documented in [Structured Query and Relationships](./docs/EN/Structured_Query_and_Relationships.md).
+
+---
+
+## Optional Ollama Embeddings
+
+Real semantic retrieval is opt-in; the deterministic FTS5/entity/graph pipeline remains the default. Start Ollama locally and install an embedding model:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+Configure `.mdgraph/config.json` (the other config sections may remain unchanged):
+
+```json
+{
+  "embedding": {
+    "enabled": true,
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "dimensions": 768,
+    "endpoint": "http://127.0.0.1:11434",
+    "timeoutMs": 30000,
+    "batchSize": 16
+  }
+}
+```
+
+```bash
+mdgraph index --full --semantic --path /your/project
+mdgraph semantic status --path /your/project
+mdgraph search --semantic --path /your/project "authentication login"
+```
+
+Query-time provider failures fall back to FTS5/entity/graph results and emit a diagnostic. Explicit semantic indexing fails before replacing the existing graph, so it cannot commit partial vector coverage. `local-hash` remains available for compatibility but is a lexical feature hash, not a language-model embedding.
 
 ---
 
@@ -148,8 +196,12 @@ Use `mdgraph help` or `mdgraph help <command>` for the full CLI reference.
 
 ## Documentation Map
 
+- `docs/EN/README.md` — task-oriented documentation index.
 - `docs/EN/Architecture.md` — pipeline, module boundaries, data flow, tradeoffs.
 - `docs/EN/Agent_Integration.md` — MCP setup, shared agent instructions, host notes.
+- `docs/EN/Retrieval_and_Context.md` — search channels, embedding providers, entity extraction, CJK behavior, and context packing.
+- `docs/EN/Structured_Query_and_Relationships.md` — structured governance DSL and explicit derived relationships.
+- `docs/EN/Operations.md` — index freshness, watcher health, polling, and provider recovery.
 - `docs/EN/Public_Contracts.md` — stable public surfaces, compatibility policy, release gates.
 - `docs/EN/Public_Contracts_1.0.md` — 1.0 contract-freeze appendix with the frozen CLI, config, MCP, JSON, and schema inventory for the current `1.0.0` baseline.
 - `docs/EN/Output_Contracts.md` — JSON output shapes for CLI and MCP consumers.

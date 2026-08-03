@@ -4,6 +4,7 @@ import { GraphRepository, type StatusCounts } from "./db/repositories.js";
 import { buildGraphRecords } from "./extraction/graph-builder.js";
 import { parseMarkdownDocument } from "./parser/markdown-parser.js";
 import { scanMarkdownFiles } from "./scanner/file-scanner.js";
+import { embedChunks } from "./semantic/embed-chunks.js";
 import type { GraphRecordSet, MDGraphConfig } from "./types.js";
 import { relativePathInsideRoot } from "./utils/path-safety.js";
 
@@ -31,7 +32,10 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
   const db = openDatabase(projectRoot);
   try {
     const repository = new GraphRepository(db);
-    if (options.full || repository.counts().documents === 0) {
+    const existingCounts = repository.counts();
+    const requiresCompleteEmbedding = config.embedding.enabled && !hasMatchingVectorCoverage(repository, config, existingCounts);
+    if (options.full || existingCounts.documents === 0 || requiresCompleteEmbedding) {
+      records.vectors = await embedChunks(records.chunks, config);
       repository.replaceAll(records);
       return {
         files: files.length,
@@ -56,7 +60,9 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
       const replacedDocumentIds = changedDocuments
         .map((document) => existing.get(document.relativePath)?.id)
         .filter((existingId): existingId is string => typeof existingId === "string" && !changedIds.has(existingId));
-      repository.replaceDocuments(filterRecordsForDocuments(records, changedIds), [...changedIds], [...deletedDocumentIds, ...replacedDocumentIds]);
+      const changedRecords = filterRecordsForDocuments(records, changedIds);
+      changedRecords.vectors = await embedChunks(changedRecords.chunks, config);
+      repository.replaceDocuments(changedRecords, [...changedIds], [...deletedDocumentIds, ...replacedDocumentIds]);
     }
 
     return {
@@ -72,6 +78,21 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
   } finally {
     db.close();
   }
+}
+
+function hasMatchingVectorCoverage(repository: GraphRepository, config: MDGraphConfig, counts: StatusCounts): boolean {
+  if (counts.vectors !== counts.chunks) {
+    return false;
+  }
+  if (counts.chunks === 0) {
+    return true;
+  }
+  return repository.storageDiagnostics().vectors.providers.some((provider) => (
+    provider.provider === config.embedding.provider
+    && provider.model === config.embedding.model
+    && provider.dimensions === config.embedding.dimensions
+    && provider.vectors === counts.chunks
+  ));
 }
 
 function parseScannedFiles(projectRoot: string, files: string[]): {

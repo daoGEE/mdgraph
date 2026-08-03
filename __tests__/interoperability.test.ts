@@ -21,7 +21,7 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("v0.7 interoperability exports", () => {
+describe("interoperability exports", () => {
   it("exports deterministic structural GraphJSON without content or local paths", async () => {
     const root = makeTempRoot("mdgraph-graphjson-");
     createFixtureDocs(root);

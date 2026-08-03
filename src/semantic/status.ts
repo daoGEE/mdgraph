@@ -1,6 +1,14 @@
 import type { StorageDiagnostics, StatusCounts } from "../db/repositories.js";
 import type { MDGraphConfig } from "../types.js";
 import { LOCAL_EMBEDDING_PROVIDER } from "./local-embedding.js";
+import {
+  createEmbeddingProvider,
+  embeddingCapability,
+  isSupportedEmbeddingProvider
+} from "./provider-registry.js";
+import type { EmbeddingCapability, EmbeddingRuntimeStatus } from "./provider.js";
+
+export { SUPPORTED_EMBEDDING_PROVIDERS } from "./provider-registry.js";
 
 export type SemanticStatusState = "disabled" | "not_indexed" | "ready" | "unsupported_provider" | "needs_reindex";
 
@@ -11,6 +19,9 @@ export interface SemanticStatusReport {
   model: string;
   dimensions: number;
   providerSupported: boolean;
+  capability: EmbeddingCapability | "unknown";
+  runtimeStatus: EmbeddingRuntimeStatus;
+  runtimeReason?: string;
   indexed: boolean;
   chunks: number;
   vectors: number;
@@ -18,8 +29,6 @@ export interface SemanticStatusReport {
   indexedProviders: StorageDiagnostics["vectors"]["providers"];
   guidance: string[];
 }
-
-export const SUPPORTED_EMBEDDING_PROVIDERS = [LOCAL_EMBEDDING_PROVIDER] as const;
 
 export function semanticStatusReport(
   config: MDGraphConfig,
@@ -68,6 +77,8 @@ export function semanticStatusReport(
     model: config.embedding.model,
     dimensions: config.embedding.dimensions,
     providerSupported,
+    capability: embeddingCapability(config.embedding.provider),
+    runtimeStatus: initialRuntimeStatus(config, providerSupported),
     indexed,
     chunks,
     vectors,
@@ -77,8 +88,55 @@ export function semanticStatusReport(
   };
 }
 
-function isSupportedEmbeddingProvider(provider: string): boolean {
-  return SUPPORTED_EMBEDDING_PROVIDERS.includes(provider as typeof SUPPORTED_EMBEDDING_PROVIDERS[number]);
+export async function semanticStatusReportAsync(
+  config: MDGraphConfig,
+  counts: StatusCounts | undefined,
+  storage: StorageDiagnostics | undefined
+): Promise<SemanticStatusReport> {
+  const report = semanticStatusReport(config, counts, storage);
+  if (!config.embedding.enabled || !report.providerSupported || config.embedding.provider === LOCAL_EMBEDDING_PROVIDER) {
+    return report;
+  }
+
+  try {
+    const availability = await createEmbeddingProvider(config.embedding).availability();
+    if (availability.status === "available") {
+      return { ...report, runtimeStatus: "available" };
+    }
+    const guidance = [...report.guidance];
+    if (availability.status === "model_missing") {
+      guidance.push(`Install the configured embedding model '${config.embedding.model}' before indexing or semantic queries.`);
+    } else {
+      guidance.push("Start the configured embedding provider or correct embedding.endpoint before retrying semantic operations.");
+    }
+    return {
+      ...report,
+      runtimeStatus: availability.status,
+      runtimeReason: availability.reason,
+      guidance
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      ...report,
+      runtimeStatus: "unavailable",
+      runtimeReason: reason,
+      guidance: [...report.guidance, "Correct the embedding provider configuration before retrying semantic operations."]
+    };
+  }
+}
+
+function initialRuntimeStatus(config: MDGraphConfig, providerSupported: boolean): EmbeddingRuntimeStatus {
+  if (!config.embedding.enabled) {
+    return "disabled";
+  }
+  if (!providerSupported) {
+    return "unavailable";
+  }
+  if (config.embedding.provider === LOCAL_EMBEDDING_PROVIDER) {
+    return "available";
+  }
+  return "unchecked";
 }
 
 function semanticState(input: {

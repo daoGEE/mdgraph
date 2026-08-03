@@ -3,16 +3,11 @@
 Status: active
 Created: 2026-07-09
 Companion to: [Public_Contracts.md](Public_Contracts.md) and [Output_Contracts.md](Output_Contracts.md)
-Task: 2026-06-27-roadmap-1-0-contract-freeze
 
 This appendix is the authoritative inventory of the MDGraph public surface
 frozen for the `1.0.0` release. It supplements the [Public Contracts](Public_Contracts.md)
 ledger with the full per-command, per-format, per-config, per-schema
 details that the ledger summarizes.
-
-The local implementation context lives in
-`docs/tasks/2026-06-27-roadmap-1-0-contract-freeze/`, which stays ignored
-and is not a GitHub deliverable.
 
 ## Freeze Baseline
 
@@ -50,7 +45,7 @@ semantics are stricter.
 | `index` | none | `index --json` returns `files`, `changed`, `deleted`, `unchanged`, `skipped`, `skippedFiles`, `mode`, `counts` | progress summary | `--semantic` and `--full` are `stable-additive` |
 | `status` | none | `status --json` returns graph counts; `--storage` adds `storage`; `--freshness` adds `freshness` | counts summary | `--freshness` is `stable-additive` |
 | `search` | `<query>` | `search --json` returns `document`, optional `section`, `score`, `reason`, `content`, `matchedEntities`, optional `semantic`; `--explain` adds `query`, `limit`, `queryMode`, `entityCandidates`, `ftsQuery`, `semanticEnabled`, `semanticActive`, `ranking`, `matchedEntities`, `results` | text list | `--explain`, `--semantic`, `--limit` are `stable-additive` |
-| `context` | `<query>` | `context --json` returns `query`, `maxChars`, `usedChars`, `items`; each item carries `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath` (with `fromId`, `fromLabel`, `edgeFromId`, `edgeToId`, `edgeKind`, `toId`, `toLabel`, `traversalDirection`, `confidence`, `provenance`), optional `sourceRefs`, optional `riskNotes`, and `content`; `--debug` adds `debug` | text context summary | recovery fields are `stable-additive` |
+| `context` | `<query>` | `context --json` returns `query`, `maxChars`, `usedChars`, additive `packing`, and `items`; each item carries `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath` (with `fromId`, `fromLabel`, `edgeFromId`, `edgeToId`, `edgeKind`, `toId`, `toLabel`, `traversalDirection`, `confidence`, `provenance`), optional `sourceRefs`, optional `riskNotes`, and `content`; `--debug` adds `debug` | text context summary | recovery and packing fields are `stable-additive`; `--packing mmr` and `--mmr-lambda` are opt-in |
 | `node` | `<query>` | `node --json` returns `id`, `label`, `kind`, `data`; `error: "ambiguous_section"` or `error: "not_found"` when unresolved | text node summary | section lookup with anchor is `stable-additive` |
 | `trace` | `<from>`, `<to>` | `trace --json` returns `from`, `to`, `found`, `steps` | text trace summary | `--depth` is `stable-additive` |
 | `eval` | none | `eval --json` returns `querySet`, `limit`, `ranking`, `generatedAt`, `summary`, `cases` | summary | `--path`, `--query-set`, `--query-mode`, `--limit` are `stable-additive`; `--query-set` accepts the closed enum `alpha | cjk`; `--limit` accepts a positive integer |
@@ -65,9 +60,21 @@ semantics are stricter.
 | `import graphjson` | `<file>` | `import graphjson <file> --verify --json` returns `valid`, `errors`, `warnings`, plus readable `format`, `formatVersion`, `schemaVersion`, `graphHash`, `counts`, `exportedCounts` | summary | `--verify` is required; exit non-zero on `valid: false`; project root is implicit from the file argument |
 | `diff` | none | `diff --base <ref> --json` returns `mode`, `base`, `head`, `summary`, `documents`, `impact` | summary | base index is created in a temp directory |
 | `report` | none | `report --json` returns `projectRoot`, `generatedAt`, `mdgraphVersion`, `indexed`, `schema`, `counts`, `storage`, `source`, `doctor`, `eval`, `bundle`, `diff`, `benchmark`, `trend` | summary | optional flags are `experimental` |
-| `serve --mcp` | none | not applicable; emits MCP JSON-RPC over stdio | stdio JSON-RPC; stderr logs when watch or MCP debug is enabled | default watch is `stable-additive`; `--no-watch` is the read-only escape hatch |
-| `watch` | none | none | progress log | `--semantic` and `--debounce <ms>` are `stable-additive` |
+| `serve --mcp` | none | not applicable; emits MCP JSON-RPC over stdio | stdio JSON-RPC; stderr logs when watch or MCP debug is enabled | default watch is `stable-additive`; `--no-watch` is the read-only escape hatch; `--watch-poll` is an explicit `stable-additive` fallback |
+| `watch` | none | none | progress and health log | `--semantic`, `--debounce <ms>`, and explicit `--poll` are `stable-additive` |
 | `doctor` | none | `doctor --json` returns `staleIndex`, `summary` (with `documents`, `orphanDocs`, `deadLinks`, `staleSourceRefs`, `missingDefinitions`, `weaklyLinkedDocs`, `possibleContradictions`, `contentRisks`, `staleIndex`), `issues`, optional `scope` (with `mode`, `baseRef`, `changedPaths`, `deletedPaths`, `renamedPaths`, `untrackedPaths`, `globalHealthIncluded`), optional `health` (with `graph`, `storage`), optional `frontmatterDiagnostics` | summary | `--changed` and `--since <ref>` are `stable-additive`; `--fail-on <severity>` (closed enum `error | warn | info`) exits non-zero at or above severity; `--strict` is the legacy strict mode |
+
+### Post-freeze Experimental Addition
+
+`query <expression>` is an experimental post-freeze command and is not part of
+the frozen 1.0 CLI inventory above. Its bounded DSL and JSON output are documented in
+[Structured Query and Relationships](Structured_Query_and_Relationships.md#structured-query) and
+[Output Contracts](Output_Contracts.md).
+
+`relationships derive` is experimental and is also outside the
+frozen inventory. Its provider/evidence gates and JSON output are documented in
+[Structured Query and Relationships](Structured_Query_and_Relationships.md#derived-related-document-relationships) and Output Contracts.
+The stable `search` command and five-tool MCP surface are unchanged.
 
 Project-related commands accept an additive `--path <project>` flag so
 agents and scripts can target a repository without changing the shell cwd.
@@ -88,9 +95,12 @@ agents and scripts can target a repository without changing the shell cwd.
 | `entities.enabledKinds` | `["symbol", "api_route", "error_code", "config_key", "file_path", "command", "package", "concept"]` | |
 | `entities.stopEntities` | `["Config", "Error", "Service", "API", "User", "Data"]` | noise-suppression list |
 | `embedding.enabled` | `false` | optional local semantic vectors |
-| `embedding.provider` | `"local-hash"` | `local-hash` is the only fully supported provider |
+| `embedding.provider` | `"local-hash"` | compatibility `lexical-hash`; `ollama` is supported as an opt-in async provider |
 | `embedding.model` | `"mdgraph-local-hash-v1"` | |
 | `embedding.dimensions` | `128` | upper bound `4096` |
+| `embedding.endpoint` | `"http://127.0.0.1:11434"` | additive Ollama endpoint; credentials in the URL are rejected |
+| `embedding.timeoutMs` | `30000` | upper bound `120000` |
+| `embedding.batchSize` | `16` | upper bound `256` |
 
 Unknown keys are currently ignored by the merge logic. Rejecting unknown
 keys is intentionally not a 1.0 breaking change; the conservative default

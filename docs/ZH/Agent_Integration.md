@@ -1,6 +1,6 @@
 # MDGraph Agent 集成指南
 
-本文是 0.3 阶段面向 coding agent 的共享集成契约。不同宿主的适配应保持很薄：启动同一个 MCP server，暴露同一组五个工具，并教 agent 在直接读取 Markdown 文件前先查询 MDGraph。
+本文是面向 coding agent 的共享集成契约。不同宿主的适配应保持很薄：启动同一个 MCP server，暴露同一组五个工具，并教 agent 在直接读取 Markdown 文件前先查询 MDGraph。
 
 ## 核心行为
 

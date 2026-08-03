@@ -5,11 +5,19 @@ import { MCP_LIMITS } from "../config/limits.js";
 import { databasePath, loadConfig } from "../config/load-config.js";
 import { openExistingDatabase } from "../db/connection.js";
 import { GraphRepository, type NodeRecord, type NodeResolution, type StatusCounts } from "../db/repositories.js";
-import { buildContext, type ContextAutoMode, type ContextResult } from "../query/context-builder.js";
-import { searchGraph } from "../query/search.js";
+import {
+  CONTEXT_PACKING_STRATEGIES,
+  buildContext,
+  buildContextAsync,
+  type ContextAutoMode,
+  type ContextPackingStrategy,
+  type ContextResult
+} from "../query/context-builder.js";
+import { explainSearchGraphAsync, searchGraph } from "../query/search.js";
 import { traceNodes, type TraceResult } from "../query/trace.js";
 import type { MDGraphConfig, SearchResult } from "../types.js";
 import { isPathInsideOrEqual } from "../utils/path-safety.js";
+import type { WatchHealthSnapshot } from "../watcher/watch-health.js";
 
 export interface McpToolDefinition {
   name: string;
@@ -62,6 +70,11 @@ export const tools: McpToolDefinition[] = [
           description: "Optional known project-relative document or source paths to seed the task-start brief."
         },
         maxChars: { type: "number", description: "Optional character budget for the returned context package." },
+        packingStrategy: {
+          type: "string",
+          enum: [...CONTEXT_PACKING_STRATEGIES],
+          description: "Optional context packing strategy. Defaults to the compatibility document round-robin strategy."
+        },
         projectPath: { type: "string", description: "Optional project root inside the served root. Defaults to server cwd." }
       }
     }
@@ -111,7 +124,11 @@ export class ToolHandler {
   private readonly defaultProjectRoot: string;
   private readonly boundProjectRoot: string;
 
-  constructor(defaultProjectRoot = process.cwd(), boundProjectRoot = defaultProjectRoot) {
+  constructor(
+    defaultProjectRoot = process.cwd(),
+    boundProjectRoot = defaultProjectRoot,
+    private readonly watchHealthProvider?: (projectRoot: string) => WatchHealthSnapshot | undefined
+  ) {
     this.boundProjectRoot = validatedProjectRoot(path.resolve(boundProjectRoot));
     this.defaultProjectRoot = validatedProjectRoot(path.resolve(defaultProjectRoot));
     if (!isPathInsideOrEqual(this.boundProjectRoot, this.defaultProjectRoot)) {
@@ -127,13 +144,17 @@ export class ToolHandler {
     const projectRoot = resolveProjectRoot(args.projectPath, this.defaultProjectRoot, this.boundProjectRoot);
 
     if (name === "mdgraph_status") {
+      const watchHealth = this.watchHealthProvider?.(projectRoot);
       if (!hasIndex(projectRoot)) {
-        return textResult(unindexedMessage(projectRoot), { projectRoot, indexed: false });
+        return textResult(unindexedMessage(projectRoot), { projectRoot, indexed: false, ...(watchHealth ? { watchHealth } : {}) });
       }
       return this.withRepository(projectRoot, (repository) => {
         const counts = repository.counts();
         const freshness = safeFreshness(projectRoot, repository);
-        return textResult(formatStatus(projectRoot, counts, freshness), { projectRoot, indexed: true, counts, freshness });
+        return textResult(
+          formatStatus(projectRoot, counts, freshness, watchHealth),
+          { projectRoot, indexed: true, counts, freshness, ...(watchHealth ? { watchHealth } : {}) }
+        );
       });
     }
 
@@ -162,13 +183,15 @@ export class ToolHandler {
           const knownFiles = optionalStringArray(args.knownFiles, "knownFiles");
           const hasManualMaxChars = args.maxChars !== undefined && args.maxChars !== null;
           const requestedMaxChars = optionalBoundedPositiveInteger(args.maxChars, config.search.maxContextChars, "maxChars", MCP_LIMITS.contextMaxChars);
+          const packingStrategy = optionalContextPackingStrategy(args.packingStrategy);
           const mode = agentContextMode(config, repository.counts(), query, knownFiles, hasManualMaxChars ? requestedMaxChars : undefined);
           const context = buildContext(repository, config, query, {
             knownFiles,
             maxChars: mode.maxChars,
             searchLimit: mode.searchLimit,
             maxDepth: mode.maxDepth,
-            mode
+            mode,
+            packingStrategy
           });
           const freshness = safeFreshness(projectRoot, repository, config);
           return withFreshnessNotice(textResult(formatContext(context), { projectRoot, context }), freshness);
@@ -200,10 +223,78 @@ export class ToolHandler {
     }
   }
 
+  async executeAsync(name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
+    if (name !== "mdgraph_search" && name !== "mdgraph_context") {
+      return this.execute(name, args);
+    }
+
+    const projectRoot = resolveProjectRoot(args.projectPath, this.defaultProjectRoot, this.boundProjectRoot);
+    if (!hasIndex(projectRoot)) {
+      return textResult(unindexedMessage(projectRoot), { projectRoot, indexed: false });
+    }
+
+    if (name === "mdgraph_search") {
+      return this.withRepositoryAsync(projectRoot, async (repository) => {
+        const config = loadConfig(projectRoot);
+        const query = requiredString(args.query, "query");
+        const counts = repository.counts();
+        const hasManualLimit = args.limit !== undefined && args.limit !== null;
+        const autoMode = agentSearchMode(config, counts, query);
+        const limit = hasManualLimit ? optionalBoundedPositiveInteger(args.limit, config.search.defaultLimit, "limit", MCP_LIMITS.searchLimit) : autoMode.limit;
+        const explanation = await explainSearchGraphAsync(repository, config, query, limit);
+        const mode = hasManualLimit ? { name: "manual" as const, limit, reason: "explicit limit argument" } : autoMode;
+        const freshness = safeFreshness(projectRoot, repository, config);
+        const structuredContent = {
+          projectRoot,
+          query,
+          mode,
+          results: explanation.results,
+          ...(explanation.semanticDiagnostic ? { semanticDiagnostic: explanation.semanticDiagnostic } : {})
+        };
+        return withFreshnessNotice(
+          textResult(withSemanticNotice(formatSearch(explanation.results), explanation.semanticDiagnostic), structuredContent),
+          freshness
+        );
+      });
+    }
+
+    return this.withRepositoryAsync(projectRoot, async (repository) => {
+      const config = loadConfig(projectRoot);
+      const query = requiredString(args.query, "query");
+      const knownFiles = optionalStringArray(args.knownFiles, "knownFiles");
+      const hasManualMaxChars = args.maxChars !== undefined && args.maxChars !== null;
+      const requestedMaxChars = optionalBoundedPositiveInteger(args.maxChars, config.search.maxContextChars, "maxChars", MCP_LIMITS.contextMaxChars);
+      const packingStrategy = optionalContextPackingStrategy(args.packingStrategy);
+      const mode = agentContextMode(config, repository.counts(), query, knownFiles, hasManualMaxChars ? requestedMaxChars : undefined);
+      const context = await buildContextAsync(repository, config, query, {
+        knownFiles,
+        maxChars: mode.maxChars,
+        searchLimit: mode.searchLimit,
+        maxDepth: mode.maxDepth,
+        mode,
+        packingStrategy
+      });
+      const freshness = safeFreshness(projectRoot, repository, config);
+      return withFreshnessNotice(
+        textResult(withSemanticNotice(formatContext(context), context.semanticDiagnostic), { projectRoot, context }),
+        freshness
+      );
+    });
+  }
+
   private withRepository(projectRoot: string, fn: (repository: GraphRepository) => McpToolResult): McpToolResult {
     const repository = new GraphRepository(openExistingDatabase(projectRoot));
     try {
       return fn(repository);
+    } finally {
+      repository.close();
+    }
+  }
+
+  private async withRepositoryAsync(projectRoot: string, fn: (repository: GraphRepository) => Promise<McpToolResult>): Promise<McpToolResult> {
+    const repository = new GraphRepository(openExistingDatabase(projectRoot));
+    try {
+      return await fn(repository);
     } finally {
       repository.close();
     }
@@ -221,15 +312,24 @@ function textResult(text: string, structuredContent?: unknown): McpToolResult {
   };
 }
 
+function withSemanticNotice(text: string, diagnostic: { message: string } | undefined): string {
+  return diagnostic ? `Semantic search degraded: ${diagnostic.message}\n\n${text}` : text;
+}
+
 interface AgentSearchMode {
   name: "auto";
   limit: number;
   reason: string;
 }
 
-function formatStatus(projectRoot: string, counts: StatusCounts, freshness: StatusFreshness): string {
+function formatStatus(
+  projectRoot: string,
+  counts: StatusCounts,
+  freshness: StatusFreshness,
+  watchHealth?: WatchHealthSnapshot
+): string {
   const database = databasePath(projectRoot);
-  return [
+  const lines = [
     "MDGraph index status: active",
     `Project: ${projectRoot}`,
     `Database: ${database}`,
@@ -243,7 +343,15 @@ function formatStatus(projectRoot: string, counts: StatusCounts, freshness: Stat
     `Edges: ${counts.edges}`,
     `Chunks: ${counts.chunks}`,
     `Vectors: ${counts.vectors}`
-  ].join("\n");
+  ];
+  if (watchHealth) {
+    lines.push(
+      `Watch health: ${watchHealth.state}${watchHealth.polling ? " (polling)" : ""}`,
+      watchHealth.lastSuccessfulIndexAt ? `Watch last successful index: ${watchHealth.lastSuccessfulIndexAt}` : "Watch last successful index: unavailable",
+      watchHealth.lastError ? `Watch last error: ${watchHealth.lastError.code}/${watchHealth.lastError.phase} - ${watchHealth.lastError.message}` : "Watch last error: none"
+    );
+  }
+  return lines.join("\n");
 }
 
 function safeFreshness(projectRoot: string, repository: GraphRepository, config = tryLoadConfig(projectRoot)): StatusFreshness {
@@ -568,6 +676,16 @@ function optionalStringArray(value: unknown, field: string): string[] {
     }
   }
   return [...new Set(result)];
+}
+
+function optionalContextPackingStrategy(value: unknown): ContextPackingStrategy | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "string" && CONTEXT_PACKING_STRATEGIES.includes(value as ContextPackingStrategy)) {
+    return value as ContextPackingStrategy;
+  }
+  throw new McpInputError(`packingStrategy must be one of ${CONTEXT_PACKING_STRATEGIES.join(", ")}`);
 }
 
 function trimBlock(content: string, maxChars: number): string {

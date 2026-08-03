@@ -68,6 +68,13 @@ try {
   assertPackedFile(packedFiles, "agent-pack/mcp-config.example.json");
   assertPackedFile(packedFiles, "agent-pack/prompts/status-doctor.md");
   assertPackedFile(packedFiles, "docs/EN/Agent_Integration.md");
+  assertPackedFile(packedFiles, "docs/EN/Retrieval_and_Context.md");
+  assertPackedFile(packedFiles, "docs/EN/Structured_Query_and_Relationships.md");
+  assertPackedFile(packedFiles, "docs/EN/Operations.md");
+  assertPackedFile(packedFiles, "docs/ZH/Retrieval_and_Context.md");
+  assertPackedFile(packedFiles, "docs/ZH/Structured_Query_and_Relationships.md");
+  assertPackedFile(packedFiles, "docs/ZH/Operations.md");
+  assertNoInternalDocs(packedFiles);
 } finally {
   for (const root of tempRoots) {
     fs.rmSync(root, { recursive: true, force: true });
@@ -164,5 +171,16 @@ function normalizePackPath(relativePath) {
 function assertPackedFile(files, relativePath) {
   if (!files.has(relativePath)) {
     throw new Error(`Expected packed file: ${relativePath}`);
+  }
+}
+
+function assertNoInternalDocs(files) {
+  const forbidden = [...files].filter((relativePath) => (
+    /^docs\/(?:EN|ZH)\/M\d+_/u.test(relativePath) ||
+    /^docs\/(?:EN|ZH)\/ADR-\d+-Retrieval-Evolution\.md$/u.test(relativePath) ||
+    relativePath.startsWith("docs/tasks/")
+  ));
+  if (forbidden.length > 0) {
+    throw new Error(`Internal implementation docs were packed: ${forbidden.sort().join(", ")}`);
   }
 }

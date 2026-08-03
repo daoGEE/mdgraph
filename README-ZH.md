@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
-<a href="./README.md">English</a> · <a href="./docs/ZH/Architecture.md">架构说明</a> · <a href="./docs/ZH/Agent_Integration.md">Agent 集成</a> · <a href="./docs/ZH/Public_Contracts.md">公开契约</a> · <a href="./docs/ZH/Output_Contracts.md">输出契约</a>
+<a href="./README.md">English</a> · <a href="./docs/ZH/README.md">文档</a> · <a href="./docs/ZH/Architecture.md">架构说明</a> · <a href="./docs/ZH/Agent_Integration.md">Agent 集成</a> · <a href="./docs/ZH/Public_Contracts.md">公开契约</a>
 
 </div>
 
@@ -119,6 +119,7 @@ mdgraph status --freshness --path /your/project
 # CLI 搜索和上下文打包
 mdgraph search --path /your/project "authentication timeout"
 mdgraph context --path /your/project "why does RedisTimeoutError affect login"
+mdgraph context --packing mmr --debug --path /your/project "why does RedisTimeoutError affect login"
 
 # 解析单个节点或追溯图谱路径
 mdgraph node --path /your/project "AuthService"
@@ -128,11 +129,58 @@ mdgraph trace --path /your/project "AuthService" "RedisTimeoutError"
 mdgraph doctor --path /your/project
 mdgraph doctor --since origin/main --fail-on warn --json --path /your/project
 
+# 实验性结构化治理查询
+mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY updated DESC'
+
+# 实验性的 provider 门禁相关文档层
+mdgraph relationships derive --dry-run --json --path /your/project
+mdgraph relationships derive --threshold 0.86 --json --path /your/project
+
 # Agent 友好的使用指引
 mdgraph usage --path /your/project
 ```
 
 完整 CLI 参考请使用 `mdgraph help` 或 `mdgraph help <command>`。
+
+真 MMR 打包为 opt-in，文档轮询继续作为兼容默认值，详见[检索与上下文](./docs/ZH/Retrieval_and_Context.md)。Watcher polling 也必须显式启用（`watch --poll` 或 `serve --mcp --watch-poll`），因为它可能增加 I/O 和 CPU；详见[运行与故障处理](./docs/ZH/Operations.md)。
+
+实验性的 `query` 命令提供有界、参数化的文档治理 DSL，不改变 `search` 或五工具 MCP surface。
+
+实验性的 `relationships derive` 只会基于 fresh、完整的 semantic-model index，在独立 evidence 与 reciprocal-neighbor 门禁通过后创建低权重 `RELATED_TO` edge；它不会在 indexing 或 watch mode 中自动运行。两个实验性工作流均记录在[结构化查询与派生关系](./docs/ZH/Structured_Query_and_Relationships.md)。
+
+---
+
+## 可选 Ollama Embedding
+
+真实语义检索需要显式启用；确定性的 FTS5/entity/graph 流水线仍是默认行为。先在本机启动 Ollama 并安装 embedding 模型：
+
+```bash
+ollama pull nomic-embed-text
+```
+
+配置 `.mdgraph/config.json`（其他配置 section 可保持不变）：
+
+```json
+{
+  "embedding": {
+    "enabled": true,
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "dimensions": 768,
+    "endpoint": "http://127.0.0.1:11434",
+    "timeoutMs": 30000,
+    "batchSize": 16
+  }
+}
+```
+
+```bash
+mdgraph index --full --semantic --path /your/project
+mdgraph semantic status --path /your/project
+mdgraph search --semantic --path /your/project "authentication login"
+```
+
+查询时 provider 失败会降级到 FTS5/entity/graph 结果并输出诊断。显式 semantic indexing 会在替换现有 graph 前失败，因此不会提交部分 vector coverage。`local-hash` 为兼容继续可用，但它是词法 feature hash，不是语言模型 embedding。
 
 ---
 
@@ -148,8 +196,12 @@ mdgraph usage --path /your/project
 
 ## 文档导航
 
+- `docs/ZH/README.md` — 按任务组织的文档入口。
 - `docs/ZH/Architecture.md` — 流水线、模块边界、数据流和取舍。
 - `docs/ZH/Agent_Integration.md` — MCP 配置、共享 agent 指令和宿主说明。
+- `docs/ZH/Retrieval_and_Context.md` — 搜索通道、embedding provider、实体抽取、CJK 行为和上下文打包。
+- `docs/ZH/Structured_Query_and_Relationships.md` — 结构化治理 DSL 和显式派生关系。
+- `docs/ZH/Operations.md` — 索引新鲜度、watcher health、polling 和 provider 恢复。
 - `docs/ZH/Public_Contracts.md` — 稳定公开表面、兼容策略和发布门禁。
 - `docs/ZH/Public_Contracts_1.0.md` — 1.0 契约冻结附录，列出当前 `1.0.0` 基线下冻结的 CLI、配置、MCP、JSON 与 schema 清单。
 - `docs/ZH/Output_Contracts.md` — CLI 和 MCP 消费者使用的 JSON 输出形状。

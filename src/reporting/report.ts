@@ -7,7 +7,7 @@ import { databasePath, loadConfig } from "../config/load-config.js";
 import { openExistingDatabase } from "../db/connection.js";
 import { GraphRepository, type StatusCounts, type StorageDiagnostics } from "../db/repositories.js";
 import { generateGraphDiff, type GraphDiffReport } from "../diff/graph-diff.js";
-import { evaluateRetrieval, type EvaluationReport } from "../evaluation/retrieval-eval.js";
+import { evaluateRetrievalAsync, type EvaluationReport } from "../evaluation/retrieval-eval.js";
 import { packageVersion } from "../version.js";
 
 export interface MDGraphReport {
@@ -81,7 +81,7 @@ export async function generateReport(
       documentsHash: source.documentsHash
     };
     if (options.eval) {
-      const evalReport = evaluateRetrieval(repository, config);
+      const evalReport = await evaluateRetrievalAsync(repository, config);
       report.eval = {
         querySet: evalReport.querySet,
         summary: evalReport.summary,

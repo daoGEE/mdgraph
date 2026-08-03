@@ -11,13 +11,20 @@ export interface ExtractedEntity {
   metadata?: Record<string, unknown>;
 }
 
-const apiRoutePattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/[A-Za-z0-9_./:{}-]+|\/[A-Za-z0-9_./:{}-]+/g;
+const apiRoutePattern = /\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/[\p{L}\p{N}_./:{}-]+|(?<![\p{L}\p{N}_@.:\/-])\/[\p{L}\p{N}_./:{}-]+/gu;
 const errorCodePattern = /\b(?:[A-Z][A-Za-z0-9]+Error|ERR_[A-Z0-9_]+|[A-Z]+_[0-9]{3,}|[A-Z]+_[A-Z0-9_]*ERROR[A-Z0-9_]*)\b/g;
-const configKeyPattern = /\b(?:[A-Z][A-Z0-9_]{2,}|[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,})\b/g;
-const filePathPattern = /(?:^|\s)([\w@.-]+\/[\w@./-]+\.(?:ts|tsx|js|jsx|md|mdx|json|yaml|yml|toml|rs|go|py|java|cs|sql))/g;
+const proseConfigKeyPattern = /(?<![\p{L}\p{N}_])(?:[A-Z][A-Z0-9]*_[A-Z0-9_]+|[A-Z](?=[A-Z0-9_]{2,}(?![\p{L}\p{N}_]))[A-Z0-9_]*\d[A-Z0-9_]*|[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,}|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+(?:[._][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)+)(?![\p{L}\p{N}_])/gu;
+const structuredConfigKeyPattern = /(?<![\p{L}\p{N}_])(?:[A-Z][A-Z0-9_]{2,}|[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,}|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+(?:[._][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)+)(?![\p{L}\p{N}_])/gu;
+const filePathPattern = /(?:^|\s)([\p{L}\p{N}_@.-]+\/[\p{L}\p{N}_@./-]+\.(?:ts|tsx|js|jsx|md|mdx|json|yaml|yml|toml|rs|go|py|java|cs|sql))/gu;
 const commandPattern = /\b(?:npm|pnpm|yarn|go|cargo|docker|kubectl|node|npx)\s+[^\n`]+/g;
-const functionPattern = /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\(\)/g;
-const symbolPattern = /\b[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_$][\w$]*)?\b/g;
+const functionPattern = /(?<![\p{L}\p{N}_$])[\p{L}_$][\p{L}\p{N}\p{M}_$]*(?:\.[\p{L}_$][\p{L}\p{N}\p{M}_$]*)?\(\)/gu;
+const codeDeclarationPattern = /\b(?:class|interface|type|enum|namespace|module)\s+([\p{L}_$][\p{L}\p{N}\p{M}_$]*)/gu;
+const codeTypeReferencePattern = /\b(?:new|extends|implements|instanceof)\s+([\p{L}_$][\p{L}\p{N}\p{M}_$]*)/gu;
+const latinSymbolNamePattern = /^[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_$][\w$]*)?$/;
+const cjkSymbolNamePattern = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{N}_-]{1,63}$/u;
+const apiRouteNamePattern = /^(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/[\p{L}\p{N}_./:{}-]+$/u;
+const configKeyNamePattern = /^(?:[A-Z][A-Z0-9_]{2,}|[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,}|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+(?:[._][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+)+)$/u;
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 export function extractEntities(document: ParsedDocument, config: MDGraphConfig): ExtractedEntity[] {
   const stopEntities = new Set(config.entities.stopEntities.map(normalizeEntityName));
@@ -44,19 +51,19 @@ export function extractEntities(document: ParsedDocument, config: MDGraphConfig)
   }
 
   for (const snippet of document.inlineCode) {
-    for (const name of extractStructuredNames(snippet.value, true)) {
+    for (const name of extractStructuredNames(snippet.value, "inline")) {
       pushEntity(entities, name, "reference", "inline_code", 0.75, snippet.sectionId, stopEntities, false);
     }
   }
 
   for (const snippet of document.codeBlocks) {
-    for (const name of extractStructuredNames(snippet.value, true)) {
+    for (const name of extractStructuredNames(snippet.value, "code")) {
       pushEntity(entities, name, "reference", "code_block", 0.7, snippet.sectionId, stopEntities, false);
     }
   }
 
   for (const link of document.markdownLinks) {
-    for (const name of extractStructuredNames(`${link.text} ${link.url}`, false)) {
+    for (const name of extractStructuredNames(`${link.text} ${link.url}`, "link")) {
       pushEntity(entities, name, "reference", "markdown_link", 0.7, link.sectionId, stopEntities, false);
     }
   }
@@ -73,7 +80,7 @@ export function extractEntities(document: ParsedDocument, config: MDGraphConfig)
 
 export function inferEntityKind(name: string): EntityKind {
   const trimmed = name.trim();
-  if (/^(?:GET|POST|PUT|PATCH|DELETE)\s+\//.test(trimmed) || trimmed.startsWith("/")) {
+  if (apiRouteNamePattern.test(trimmed)) {
     return "api_route";
   }
   if (filePathPattern.test(` ${trimmed}`)) {
@@ -89,7 +96,7 @@ export function inferEntityKind(name: string): EntityKind {
     return "error_code";
   }
   errorCodePattern.lastIndex = 0;
-  if (/^[A-Z][A-Z0-9_]{2,}$/.test(trimmed) || /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,}$/.test(trimmed)) {
+  if (configKeyNamePattern.test(trimmed)) {
     return "config_key";
   }
   if (/^@?[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(trimmed)) {
@@ -116,7 +123,7 @@ function pushEntity(
     return;
   }
   const kind = inferEntityKind(name);
-  if (!allowStopEntity && kind === "symbol" && stopEntities.has(normalizeEntityName(name))) {
+  if (!allowStopEntity && stopEntities.has(normalizeEntityName(name))) {
     return;
   }
   target.push({ name, kind, role, provenance, confidence, sectionId });
@@ -127,7 +134,7 @@ function extractDeclaredDefinitionNames(content: string): string[] {
   for (const match of content.matchAll(/[-*]\s+`([^`]+)`/g)) {
     names.push(match[1]);
   }
-  for (const match of content.matchAll(/^[-*]\s+([A-Za-z0-9_.:/-]+)\s*:/gm)) {
+  for (const match of content.matchAll(/^[-*]\s+([\p{L}\p{N}_.:/-]+)\s*:/gmu)) {
     names.push(match[1]);
   }
   return uniqueStrings(names);
@@ -137,23 +144,31 @@ function extractHighConfidenceReferences(content: string): string[] {
   return uniqueStrings([
     ...matches(content, apiRoutePattern),
     ...matches(content, errorCodePattern),
-    ...matches(content, configKeyPattern)
+    ...extractConfigKeys(content, proseConfigKeyPattern)
   ]);
 }
 
-function extractStructuredNames(content: string, includeSymbols: boolean): string[] {
+function extractStructuredNames(content: string, source: "inline" | "code" | "link"): string[] {
   const names = [
     ...matches(content, apiRoutePattern),
     ...matches(content, errorCodePattern),
-    ...matches(content, configKeyPattern),
+    ...extractConfigKeys(content, structuredConfigKeyPattern),
     ...matches(content, commandPattern),
     ...matches(content, functionPattern),
     ...matches(content, filePathPattern, 1)
   ];
-  if (includeSymbols) {
-    names.push(...matches(content, symbolPattern));
+  if (source === "inline" && isStandaloneInlineSymbol(content)) {
+    names.push(cleanupName(content));
+  }
+  if (source === "code") {
+    names.push(...matches(content, codeDeclarationPattern, 1));
+    names.push(...matches(content, codeTypeReferencePattern, 1));
   }
   return uniqueStrings(names);
+}
+
+function extractConfigKeys(content: string, pattern: RegExp): string[] {
+  return matches(content, pattern).filter((name) => !HTTP_METHODS.has(name));
 }
 
 function matches(content: string, pattern: RegExp, group = 0): string[] {
@@ -170,12 +185,20 @@ function isDefinesHeading(heading: string): boolean {
 function looksLikeEntity(value: string): boolean {
   const trimmed = cleanupName(value);
   return Boolean(trimmed) && (
-    /^\/[A-Za-z0-9_./:{}-]+$/.test(trimmed) ||
-    /^(?:GET|POST|PUT|PATCH|DELETE)\s+\//.test(trimmed) ||
-    /^[A-Z][A-Za-z0-9]+(?:\.[A-Za-z_$][\w$]*)?$/.test(trimmed) ||
-    /^[A-Z][A-Z0-9_]{2,}$/.test(trimmed) ||
-    /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){2,}$/.test(trimmed)
+    apiRouteNamePattern.test(trimmed) ||
+    latinSymbolNamePattern.test(trimmed) ||
+    configKeyNamePattern.test(trimmed) ||
+    functionPatternMatches(trimmed)
   );
+}
+
+function isStandaloneInlineSymbol(value: string): boolean {
+  const trimmed = cleanupName(value);
+  return latinSymbolNamePattern.test(trimmed) || cjkSymbolNamePattern.test(trimmed);
+}
+
+function functionPatternMatches(value: string): boolean {
+  return matches(value, functionPattern).some((match) => match === value);
 }
 
 function cleanupName(value: string): string {

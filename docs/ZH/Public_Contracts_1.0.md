@@ -3,13 +3,9 @@
 状态：active
 创建时间：2026-07-09
 配套文档：[Public_Contracts.md](Public_Contracts.md) 与 [Output_Contracts.md](Output_Contracts.md)
-任务：2026-06-27-roadmap-1-0-contract-freeze
 
 本附录是 `1.0.0` 发布时冻结的 MDGraph public surface 公开契约清单。它为 [Public Contracts](Public_Contracts.md) ledger 提供
 逐命令、逐格式、逐配置、逐 schema 的细节补充。
-
-本地实现上下文见 `docs/tasks/2026-06-27-roadmap-1-0-contract-freeze/`，该目录
-保持忽略，不作为 GitHub 交付物。
 
 ## 冻结基线
 
@@ -44,7 +40,7 @@ shape 与 exit semantics 更严格。
 | `index` | none | `index --json` 返回 `files`、`changed`、`deleted`、`unchanged`、`skipped`、`skippedFiles`、`mode`、`counts` | 进度 summary | `--semantic` 与 `--full` 是 `stable-additive` |
 | `status` | none | `status --json` 返回 graph counts；`--storage` 追加 `storage`；`--freshness` 追加 `freshness` | counts summary | `--freshness` 是 `stable-additive` |
 | `search` | `<query>` | `search --json` 返回 `document`、可选 `section`、`score`、`reason`、`content`、`matchedEntities`、可选 `semantic`；`--explain` 追加 `query`、`limit`、`queryMode`、`entityCandidates`、`ftsQuery`、`semanticEnabled`、`semanticActive`、`ranking`、`matchedEntities`、`results` | 文本列表 | `--explain`、`--semantic`、`--limit` 是 `stable-additive` |
-| `context` | `<query>` | `context --json` 返回 `query`、`maxChars`、`usedChars`、`items`；每个 item 含 `nodeId`、`documentId`、可选 `sectionId`、可选 `anchor`、`path`、`title`、可选 `heading`、可选 `lines`、`reason`、`matchedEntities`、可选 `edgePath`（含 `fromId`、`fromLabel`、`edgeFromId`、`edgeToId`、`edgeKind`、`toId`、`toLabel`、`traversalDirection`、`confidence`、`provenance`）、可选 `sourceRefs`、可选 `riskNotes`、`content`；`--debug` 追加 `debug` | 文本 context summary | recovery fields 是 `stable-additive` |
+| `context` | `<query>` | `context --json` 返回 `query`、`maxChars`、`usedChars`、additive `packing`、`items`；每个 item 含 `nodeId`、`documentId`、可选 `sectionId`、可选 `anchor`、`path`、`title`、可选 `heading`、可选 `lines`、`reason`、`matchedEntities`、可选 `edgePath`（含 `fromId`、`fromLabel`、`edgeFromId`、`edgeToId`、`edgeKind`、`toId`、`toLabel`、`traversalDirection`、`confidence`、`provenance`）、可选 `sourceRefs`、可选 `riskNotes`、`content`；`--debug` 追加 `debug` | 文本 context summary | recovery 与 packing fields 是 `stable-additive`；`--packing mmr` 和 `--mmr-lambda` 为 opt-in |
 | `node` | `<query>` | `node --json` 返回 `id`、`label`、`kind`、`data`；未解析时返回 `error: "ambiguous_section"` 或 `error: "not_found"` | 文本 node summary | 带 anchor 的 section 查找是 `stable-additive` |
 | `trace` | `<from>`, `<to>` | `trace --json` 返回 `from`、`to`、`found`、`steps` | 文本 trace summary | `--depth` 是 `stable-additive` |
 | `eval` | none | `eval --json` 返回 `querySet`、`limit`、`ranking`、`generatedAt`、`summary`、`cases` | summary | `--path`、`--query-set`、`--query-mode`、`--limit` 是 `stable-additive`；`--query-set` 接受封闭枚举 `alpha | cjk`；`--limit` 接受正整数 |
@@ -59,9 +55,20 @@ shape 与 exit semantics 更严格。
 | `import graphjson` | `<file>` | `import graphjson <file> --verify --json` 返回 `valid`、`errors`、`warnings`，以及可读的 `format`、`formatVersion`、`schemaVersion`、`graphHash`、`counts`、`exportedCounts` | summary | `--verify` 必需；`valid: false` 时非零退出；project root 由文件参数隐式决定 |
 | `diff` | none | `diff --base <ref> --json` 返回 `mode`、`base`、`head`、`summary`、`documents`、`impact` | summary | base index 在临时目录中创建 |
 | `report` | none | `report --json` 返回 `projectRoot`、`generatedAt`、`mdgraphVersion`、`indexed`、`schema`、`counts`、`storage`、`source`、`doctor`、`eval`、`bundle`、`diff`、`benchmark`、`trend` | summary | 可选 flags 为 `experimental` |
-| `serve --mcp` | none | 不适用；通过 stdio 发送 MCP JSON-RPC | stdio JSON-RPC；watch 或 MCP debug 开启时记录到 stderr | 默认 watch 为 `stable-additive`；`--no-watch` 是只读退路 |
-| `watch` | none | none | 进度日志 | `--semantic` 与 `--debounce <ms>` 是 `stable-additive` |
+| `serve --mcp` | none | 不适用；通过 stdio 发送 MCP JSON-RPC | stdio JSON-RPC；watch 或 MCP debug 开启时记录到 stderr | 默认 watch 为 `stable-additive`；`--no-watch` 是只读退路；`--watch-poll` 是显式 `stable-additive` fallback |
+| `watch` | none | none | 进度与健康日志 | `--semantic`、`--debounce <ms>` 和显式 `--poll` 是 `stable-additive` |
 | `doctor` | none | `doctor --json` 返回 `staleIndex`、`summary`（含 `documents`、`orphanDocs`、`deadLinks`、`staleSourceRefs`、`missingDefinitions`、`weaklyLinkedDocs`、`possibleContradictions`、`contentRisks`、`staleIndex`）、`issues`，可选 `scope`（含 `mode`、`baseRef`、`changedPaths`、`deletedPaths`、`renamedPaths`、`untrackedPaths`、`globalHealthIncluded`）、可选 `health`（含 `graph`、`storage`）、可选 `frontmatterDiagnostics` | summary | `--changed` 与 `--since <ref>` 是 `stable-additive`；`--fail-on <severity>`（封闭枚举 `error | warn | info`）在不低于该严重级时非零退出；`--strict` 是旧严格模式 |
+
+### 冻结后的实验性新增项
+
+`query <expression>` 是冻结后增加的实验性命令，不属于上方冻结的 1.0 CLI 清单。
+其有界 DSL 与 JSON 输出记录在[结构化查询与派生关系](Structured_Query_and_Relationships.md#结构化查询)和
+[输出契约](Output_Contracts.md)中。
+
+`relationships derive` 同样是冻结清单之外的实验性命令。它的
+provider/evidence 门禁和 JSON 输出记录在
+[结构化查询与派生关系](Structured_Query_and_Relationships.md#派生相关文档关系)与输出契约中。稳定的 `search`
+命令与五工具 MCP surface 均未改变。
 
 项目相关命令接受 additive `--path <project>` flag，让 agent 和脚本不必切换
 shell cwd 即可定位仓库。
@@ -82,9 +89,12 @@ shell cwd 即可定位仓库。
 | `entities.enabledKinds` | `["symbol", "api_route", "error_code", "config_key", "file_path", "command", "package", "concept"]` | |
 | `entities.stopEntities` | `["Config", "Error", "Service", "API", "User", "Data"]` | 噪声抑制列表 |
 | `embedding.enabled` | `false` | 可选本地 semantic vectors |
-| `embedding.provider` | `"local-hash"` | 仅 `local-hash` 是完全受支持的 provider |
+| `embedding.provider` | `"local-hash"` | 兼容用 `lexical-hash`；`ollama` 作为可选异步 provider 受支持 |
 | `embedding.model` | `"mdgraph-local-hash-v1"` | |
 | `embedding.dimensions` | `128` | 上限 `4096` |
+| `embedding.endpoint` | `"http://127.0.0.1:11434"` | additive Ollama endpoint；拒绝 URL 内嵌凭据 |
+| `embedding.timeoutMs` | `30000` | 上限 `120000` |
+| `embedding.batchSize` | `16` | 上限 `256` |
 
 未知 key 当前由 merge 逻辑忽略。1.0 不强制将未知 key 变为错误；保持"忽略但不
 承诺"的保守默认，使既有 config 文件继续加载。数值与路径相关限制仍属于安全

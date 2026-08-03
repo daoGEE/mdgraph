@@ -16,6 +16,7 @@ export interface MCPServerOptions {
   watch?: boolean;
   semantic?: boolean;
   debounceMs?: number;
+  usePolling?: boolean;
 }
 
 export class MCPServer {
@@ -25,16 +26,19 @@ export class MCPServer {
   private readonly watchEnabled: boolean;
   private readonly watchSemantic: boolean | undefined;
   private readonly watchDebounceMs: number | undefined;
+  private readonly watchUsePolling: boolean;
   private watchHandle: Promise<WatchHandle> | undefined;
+  private resolvedWatchHandle: WatchHandle | undefined;
   private watchRoot: string | undefined;
 
   constructor(private readonly transport: JsonRpcTransport, options: MCPServerOptions = {}) {
     this.boundProjectRoot = validatedProjectRoot(path.resolve(options.projectRoot ?? process.cwd()));
     this.projectRoot = this.boundProjectRoot;
-    this.toolHandler = new ToolHandler(this.projectRoot, this.boundProjectRoot);
+    this.toolHandler = this.createToolHandler(this.projectRoot);
     this.watchEnabled = options.watch ?? true;
     this.watchSemantic = options.semantic;
     this.watchDebounceMs = options.debounceMs;
+    this.watchUsePolling = options.usePolling ?? false;
   }
 
   start(): void {
@@ -79,7 +83,7 @@ export class MCPServer {
       case "tools/call":
         if (isRequest) {
           mcpDebug("tools/call request", { id: message.id });
-          this.handleToolsCall(message);
+          await this.handleToolsCall(message);
         }
         return;
       case "resources/list":
@@ -124,7 +128,7 @@ export class MCPServer {
       return;
     }
     this.projectRoot = projectRoot;
-    this.toolHandler = new ToolHandler(projectRoot, this.boundProjectRoot);
+    this.toolHandler = this.createToolHandler(projectRoot);
     mcpDebug("initialize resolved", { id: request.id, projectRoot, indexed: hasIndex(projectRoot) });
     this.transport.sendResult(request.id, {
       protocolVersion: PROTOCOL_VERSION,
@@ -134,7 +138,7 @@ export class MCPServer {
     });
   }
 
-  private handleToolsCall(request: JsonRpcRequest): void {
+  private async handleToolsCall(request: JsonRpcRequest): Promise<void> {
     const params = request.params as { name?: unknown; arguments?: unknown } | undefined;
     if (!params || typeof params.name !== "string") {
       this.transport.sendError(request.id, ErrorCodes.InvalidParams, "Missing tool name", mcpErrorData("tools.call.params"));
@@ -149,7 +153,7 @@ export class MCPServer {
 
     try {
       const args = params.arguments && typeof params.arguments === "object" ? params.arguments as Record<string, unknown> : {};
-      const result = this.toolHandler.execute(params.name, args);
+      const result = await this.toolHandler.executeAsync(params.name, args);
       mcpDebug("tools/call result", {
         id: request.id,
         tool: params.name,
@@ -185,23 +189,25 @@ export class MCPServer {
     const watchHandle = watchProject(projectRoot, {
       semantic: this.watchSemantic,
       debounceMs: this.watchDebounceMs,
+      usePolling: this.watchUsePolling,
       onIndexed: (result) => {
         if (result.changed > 0 || result.deleted > 0 || result.skipped > 0) {
           console.error(`MDGraph MCP watch indexed ${result.changed} changed, ${result.deleted} deleted, ${result.unchanged} unchanged, ${result.skipped} skipped document(s).`);
         }
       },
       onError: (error) => {
-        console.error(`MDGraph MCP watch failed: ${error.message}`);
+        console.error(`MDGraph MCP watch error: ${error.message}`);
       }
     });
     this.watchHandle = watchHandle;
     try {
-      await watchHandle;
+      this.resolvedWatchHandle = await watchHandle;
       mcpDebug("watch ready", { projectRoot });
     } catch (error) {
       if (this.watchHandle === watchHandle) {
         this.watchHandle = undefined;
         this.watchRoot = undefined;
+        this.resolvedWatchHandle = undefined;
       }
       mcpDebug("watch startup failure", { projectRoot, error: errorMessage(error) });
       throw error;
@@ -215,10 +221,17 @@ export class MCPServer {
     }
     const watchHandle = this.watchHandle;
     this.watchHandle = undefined;
+    this.resolvedWatchHandle = undefined;
     this.watchRoot = undefined;
     const handle = await watchHandle;
     mcpDebug("watch stop", { projectRoot: this.projectRoot });
     await handle.close();
+  }
+
+  private createToolHandler(projectRoot: string): ToolHandler {
+    return new ToolHandler(projectRoot, this.boundProjectRoot, (requestedRoot) => (
+      requestedRoot === this.watchRoot ? this.resolvedWatchHandle?.getHealth() : undefined
+    ));
   }
 }
 

@@ -10,18 +10,28 @@ import { databasePath, initProjectConfig, loadConfig } from "../config/load-conf
 import { openExistingDatabase } from "../db/connection.js";
 import { GraphRepository, type NodeResolution } from "../db/repositories.js";
 import { formatGraphDiff, generateGraphDiff } from "../diff/graph-diff.js";
-import { EVALUATION_QUERY_SET_NAMES, evaluateRetrieval } from "../evaluation/retrieval-eval.js";
+import { EVALUATION_QUERY_SET_NAMES, evaluateRetrieval, evaluateRetrievalAsync } from "../evaluation/retrieval-eval.js";
 import { buildMermaidTraceExport } from "../export/diagram.js";
 import { buildGraphJsonExport, formatGraphJsonVerification, readGraphJsonFile, stableGraphJson, verifyGraphJsonExport } from "../export/graphjson.js";
 import { buildDocsSiteIndex, formatWikiLinkMarkdownIndex } from "../export/markdown-index.js";
 import { buildSourceBridgeReport, type SourceBridgeReport } from "../export/source-bridge.js";
 import { indexProject, type IndexResult } from "../indexer.js";
 import { startStdioMcpServer } from "../mcp/server.js";
-import { buildContext } from "../query/context-builder.js";
-import { explainSearchGraph, searchGraph } from "../query/search.js";
+import {
+  CONTEXT_PACKING_STRATEGIES,
+  buildContext,
+  buildContextAsync,
+  type ContextPackingStrategy
+} from "../query/context-builder.js";
+import { explainSearchGraph, explainSearchGraphAsync, searchGraph } from "../query/search.js";
 import { traceNodes } from "../query/trace.js";
+import { executeStructuredQuery, type StructuredQueryResult } from "../query/structured-query-executor.js";
+import {
+  deriveRelatedRelationships,
+  type DerivedRelationshipReport
+} from "../relationships/derive-related.js";
 import { formatReport, generateReport } from "../reporting/report.js";
-import { semanticStatusReport, type SemanticStatusReport } from "../semantic/status.js";
+import { semanticStatusReportAsync, type SemanticStatusReport } from "../semantic/status.js";
 import type { SearchQueryMode } from "../types.js";
 import { packageVersion } from "../version.js";
 import { watchProject } from "../watcher/file-watcher.js";
@@ -122,18 +132,18 @@ program
   .option("--semantic", "Include local semantic vector matches when vectors are indexed")
   .option("--explain", "Include query parsing and ranking explanation details")
   .option("--path <path>", "Project root. Defaults to the current working directory")
-  .action((query: string, options: { json?: boolean; limit?: number; semantic?: boolean; explain?: boolean; path?: string }) => {
+  .action(async (query: string, options: { json?: boolean; limit?: number; semantic?: boolean; explain?: boolean; path?: string }) => {
     const projectRoot = projectRootFromOption(options.path);
     const config = loadConfig(projectRoot);
     const repository = openRepository(projectRoot);
     try {
+      const explanation = await explainSearchGraphAsync(repository, config, query, options.limit ?? config.search.defaultLimit, { semantic: options.semantic });
+      printSemanticDiagnostic(explanation.semanticDiagnostic);
       if (options.explain) {
-        const explanation = explainSearchGraph(repository, config, query, options.limit ?? config.search.defaultLimit, { semantic: options.semantic });
         printResult(options.json, explanation, formatSearchExplanation(explanation));
         return;
       }
-      const results = searchGraph(repository, config, query, options.limit ?? config.search.defaultLimit, { semantic: options.semantic });
-      printResult(options.json, results, formatSearchResults(results));
+      printResult(options.json, explanation.results, formatSearchResults(explanation.results));
     } finally {
       closeRepository(repository);
     }
@@ -145,14 +155,38 @@ program
   .argument("<query>")
   .option("--json", "Print JSON output")
   .option("--debug", "Include context packing and graph expansion debug details")
+  .option("--packing <strategy>", `Context packing strategy: ${CONTEXT_PACKING_STRATEGIES.join(" | ")}`, parseContextPackingStrategy)
+  .option("--mmr-lambda <number>", "MMR query-relevance weight from 0 to 1", parseUnitInterval)
   .option("--path <path>", "Project root. Defaults to the current working directory")
-  .action((query: string, options: { json?: boolean; debug?: boolean; path?: string }) => {
+  .action(async (query: string, options: { json?: boolean; debug?: boolean; packing?: ContextPackingStrategy; mmrLambda?: number; path?: string }) => {
     const projectRoot = projectRootFromOption(options.path);
     const config = loadConfig(projectRoot);
     const repository = openRepository(projectRoot);
     try {
-      const context = buildContext(repository, config, query, { debug: options.debug });
+      const context = await buildContextAsync(repository, config, query, {
+        debug: options.debug,
+        packingStrategy: options.packing,
+        mmrLambda: options.mmrLambda
+      });
+      printSemanticDiagnostic(context.semanticDiagnostic);
       printResult(options.json, context, formatContext(context));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+program
+  .command("query")
+  .description("Run an experimental deterministic structured document query")
+  .argument("<expression>", "Structured expression, for example: type:adr AND status:accepted")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action(async (expression: string, options: { json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const repository = openRepository(projectRoot);
+    try {
+      const result = await executeStructuredQuery(repository, projectRoot, expression);
+      printResult(options.json, result, formatStructuredQueryResult(result));
     } finally {
       closeRepository(repository);
     }
@@ -200,12 +234,15 @@ program
   .option("--limit <number>", "Search results per evaluation case", parseInteger)
   .option("--query-set <name>", `Evaluation query set (${EVALUATION_QUERY_SET_NAMES.join(", ")})`, "alpha")
   .option("--query-mode <mode>", "Search query mode for evaluation (auto, keyword, semantic)", parseSearchQueryMode, "auto")
-  .action((options: { json?: boolean; path: string; limit?: number; querySet: string; queryMode: SearchQueryMode }) => {
+  .action(async (options: { json?: boolean; path: string; limit?: number; querySet: string; queryMode: SearchQueryMode }) => {
     const projectRoot = validateProjectRoot(options.path);
     const config = loadConfig(projectRoot);
     const repository = openRepository(projectRoot);
     try {
-      const report = evaluateRetrieval(repository, config, { limit: options.limit, querySet: options.querySet, queryMode: options.queryMode });
+      const report = await evaluateRetrievalAsync(repository, config, { limit: options.limit, querySet: options.querySet, queryMode: options.queryMode });
+      for (const diagnostic of report.ranking.semanticDiagnostics ?? []) {
+        printSemanticDiagnostic(diagnostic);
+      }
       printResult(options.json, report, formatEvaluationReport(report));
     } finally {
       closeRepository(repository);
@@ -221,19 +258,56 @@ semanticCommand
   .description("Show semantic provider, vector coverage, and reindex guidance")
   .option("--json", "Print JSON output")
   .option("--path <path>", "Project root to inspect", process.cwd())
-  .action((options: { json?: boolean; path: string }) => {
+  .action(async (options: { json?: boolean; path: string }) => {
     const projectRoot = validateProjectRoot(options.path);
     const config = loadConfig(projectRoot);
     if (!fs.existsSync(databasePath(projectRoot))) {
-      const report = semanticStatusReport(config, undefined, undefined);
+      const report = await semanticStatusReportAsync(config, undefined, undefined);
       printResult(options.json, { projectRoot, ...report }, formatSemanticStatus(projectRoot, report));
       return;
     }
 
     const repository = openRepository(projectRoot);
     try {
-      const report = semanticStatusReport(config, repository.counts(), repository.storageDiagnostics());
+      const report = await semanticStatusReportAsync(config, repository.counts(), repository.storageDiagnostics());
       printResult(options.json, { projectRoot, ...report }, formatSemanticStatus(projectRoot, report));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+const relationshipsCommand = program
+  .command("relationships")
+  .description("Manage opt-in derived graph relationships");
+
+relationshipsCommand
+  .command("derive")
+  .description("Derive provider-gated RELATED_TO edges from indexed semantic vectors")
+  .option("--json", "Print JSON output")
+  .option("--threshold <number>", "Minimum independent chunk similarity from 0.75 to 1", parseUnitInterval)
+  .option("--max-neighbors <number>", "Maximum reciprocal neighbors per document from 1 to 10", parseInteger)
+  .option("--min-evidence <number>", "Independent section-pair evidence required from 2 to 4", parseInteger)
+  .option("--dry-run", "Evaluate relationships without replacing stored derived edges")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action(async (options: {
+    json?: boolean;
+    threshold?: number;
+    maxNeighbors?: number;
+    minEvidence?: number;
+    dryRun?: boolean;
+    path?: string;
+  }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const config = loadConfig(projectRoot);
+    const repository = openRepository(projectRoot);
+    try {
+      const report = await deriveRelatedRelationships(repository, projectRoot, config, {
+        threshold: options.threshold,
+        maxNeighbors: options.maxNeighbors,
+        minEvidence: options.minEvidence,
+        dryRun: options.dryRun
+      });
+      printResult(options.json, report, formatDerivedRelationships(report));
     } finally {
       closeRepository(repository);
     }
@@ -445,8 +519,9 @@ program
   .option("--no-watch", "Disable automatic index updates while serving MCP requests")
   .option("--semantic", "Build local semantic vectors during watch indexing")
   .option("--debounce <ms>", "Debounce delay in milliseconds for serve watch mode", parseInteger)
+  .option("--watch-poll", "Use explicit polling instead of native file-system events")
   .option("--path <path>", "Project root to serve", process.cwd())
-  .action((options: { mcp?: boolean; watch?: boolean; semantic?: boolean; debounce?: number; path: string }) => {
+  .action((options: { mcp?: boolean; watch?: boolean; semantic?: boolean; debounce?: number; watchPoll?: boolean; path: string }) => {
     if (!options.mcp) {
       throw new Error("Only MCP stdio serving is currently supported. Pass --mcp.");
     }
@@ -455,7 +530,8 @@ program
       projectRoot: validateProjectRoot(options.path),
       watch,
       semantic: watch ? options.semantic : undefined,
-      debounceMs: watch ? options.debounce : undefined
+      debounceMs: watch ? options.debounce : undefined,
+      usePolling: watch ? options.watchPoll : undefined
     });
   });
 
@@ -464,18 +540,29 @@ program
   .description("Watch Markdown files and incrementally update the graph index")
   .option("--semantic", "Build local semantic vectors during watch indexing")
   .option("--debounce <ms>", "Debounce delay in milliseconds", parseInteger)
+  .option("--poll", "Use explicit polling instead of native file-system events")
   .option("--path <path>", "Project root. Defaults to the current working directory")
-  .action(async (options: { semantic?: boolean; debounce?: number; path?: string }) => {
+  .action(async (options: { semantic?: boolean; debounce?: number; poll?: boolean; path?: string }) => {
     const projectRoot = projectRootFromOption(options.path);
     console.error("MDGraph watch started. Press Ctrl+C to stop.");
+    let lastHealthState: string | undefined;
     const handle = await watchProject(projectRoot, {
       semantic: options.semantic,
       debounceMs: options.debounce,
+      usePolling: options.poll,
       onIndexed: (result) => {
         console.error(`Indexed ${result.changed} changed, ${result.deleted} deleted, ${result.unchanged} unchanged, ${result.skipped} skipped document(s).`);
       },
       onError: (error) => {
-        console.error(`Watch indexing failed: ${error.message}`);
+        console.error(`Watch error: ${error.message}`);
+      },
+      onHealthChanged: (health) => {
+        if (health.state === lastHealthState) {
+          return;
+        }
+        lastHealthState = health.state;
+        const error = health.lastError ? ` (${health.lastError.code}/${health.lastError.phase}: ${health.lastError.message})` : "";
+        console.error(`Watch health: ${health.state}${health.polling ? " [polling]" : ""}${error}`);
       }
     });
     await new Promise<void>((resolve) => {
@@ -605,7 +692,7 @@ function buildUsageGuide(projectRoot: string): UsageGuide {
       {
         name: "Help",
         purpose: "Inspect syntax for all commands or a specific command.",
-        commands: ["mdgraph help", "mdgraph help search", "mdgraph usage --json"]
+        commands: ["mdgraph help", "mdgraph help search", "mdgraph help query", "mdgraph usage --json"]
       },
       {
         name: "Agent MCP",
@@ -760,9 +847,44 @@ function formatContext(context: ReturnType<typeof buildContext>): string {
     `Expanded edges: ${context.debug.expandedEdges}`,
     `Candidates: ${context.debug.candidateCount} (${context.debug.directCandidates} direct, ${context.debug.expandedCandidates} expanded)`,
     `Packing: ${context.debug.packingStrategy}, items: ${context.debug.packedItems}, unique documents: ${context.debug.packedUniqueDocuments}, diversity: ${context.debug.packingDiversityRatio.toFixed(2)}`,
+    context.debug.mmrLambda !== undefined
+      ? `MMR: lambda ${context.debug.mmrLambda.toFixed(2)}, similarity: ${context.debug.packingSimilarity}, redundancy skipped: ${context.debug.redundancySkippedItems ?? 0}`
+      : "",
     `Skipped visited: ${context.debug.skippedVisitedNodes}, node-limit: ${context.debug.skippedByNodeLimit}, depth: ${context.debug.skippedByDepth}`,
     `Budget truncated items: ${context.debug.budgetTruncatedItems}, skipped items: ${context.debug.budgetSkippedItems}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
+}
+
+function formatStructuredQueryResult(result: StructuredQueryResult): string {
+  const header = [
+    "MDGraph structured query",
+    `Query: ${result.query}`,
+    `Execution: ${result.execution.strategy} (${result.execution.stages.join(", ")}; ${result.execution.parameterCount} SQL parameter(s))`,
+    `Matches: ${result.total}; returned: ${result.returned}${result.truncated ? " (truncated)" : ""}`
+  ];
+  const items = result.items.map((item) => (
+    `- ${item.document.path} [${item.document.type}/${item.document.status}; ${item.document.trustTier}]`
+  ));
+  return [...header, ...(items.length ? ["Results:", ...items] : ["No documents matched."])].join("\n");
+}
+
+function formatDerivedRelationships(report: DerivedRelationshipReport): string {
+  const lines = [
+    "MDGraph derived relationships",
+    `Provider: ${report.provider}/${report.model} (${report.dimensions} dimensions)`,
+    `Gate: ${report.qualityGate.id} passed`,
+    `Corpus: ${report.corpus.eligibleDocuments}/${report.corpus.documents} eligible documents, ${report.corpus.vectors}/${report.corpus.chunks} vectors`,
+    `Relationships: ${report.relationshipPairs} pair(s), ${report.directedEdges} directed edge(s)${report.options.dryRun ? " [dry run]" : ""}`
+  ];
+  if (report.relationships.length) {
+    lines.push(
+      "Matches:",
+      ...report.relationships.map((relationship) => (
+        `- ${relationship.fromPath} <-> ${relationship.toPath} (${relationship.confidence.toFixed(4)}, ${relationship.evidenceSections.length} evidence section pair(s))`
+      ))
+    );
+  }
+  return lines.join("\n");
 }
 
 function formatTrace(trace: ReturnType<typeof traceNodes>): string {
@@ -805,12 +927,20 @@ function formatSemanticStatus(projectRoot: string, report: SemanticStatusReport)
     `State: ${report.state}`,
     `Configured provider: ${report.provider}/${report.model} (${report.dimensions} dimensions, enabled: ${report.enabled})`,
     `Provider supported: ${report.providerSupported}`,
+    `Provider capability: ${report.capability}`,
+    `Provider runtime: ${report.runtimeStatus}${report.runtimeReason ? ` - ${report.runtimeReason}` : ""}`,
     `Indexed: ${report.indexed}`,
     `Vectors: ${report.vectors}/${report.chunks} chunks`,
     `Vector storage: ${report.vectorStorageFormat}`,
     `Indexed providers: ${report.indexedProviders.map((provider) => `${provider.provider}/${provider.model}/${provider.dimensions}=${provider.vectors}`).join(", ") || "none"}`,
     `Guidance: ${report.guidance.join(" ") || "none"}`
   ].join("\n");
+}
+
+function printSemanticDiagnostic(diagnostic: { provider: string; code: string; message: string } | undefined): void {
+  if (diagnostic) {
+    console.error(`MDGraph semantic fallback [${diagnostic.provider}/${diagnostic.code}]: ${diagnostic.message}`);
+  }
 }
 
 function formatBundleCreate(result: Awaited<ReturnType<typeof createGraphBundle>>): string {
@@ -909,6 +1039,21 @@ function parseSearchQueryMode(value: string): SearchQueryMode {
     return value;
   }
   throw new Error(`Expected query mode to be one of auto, keyword, or semantic; got ${value}`);
+}
+
+function parseContextPackingStrategy(value: string): ContextPackingStrategy {
+  if (CONTEXT_PACKING_STRATEGIES.includes(value as ContextPackingStrategy)) {
+    return value as ContextPackingStrategy;
+  }
+  throw new Error(`Expected one of ${CONTEXT_PACKING_STRATEGIES.join(", ")}, got ${value}`);
+}
+
+function parseUnitInterval(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1 || value.trim() === "") {
+    throw new Error(`Expected a number from 0 to 1, got ${value}`);
+  }
+  return parsed;
 }
 
 function doctorIssueCount(summary: Awaited<ReturnType<typeof runDoctor>>["summary"]): number {

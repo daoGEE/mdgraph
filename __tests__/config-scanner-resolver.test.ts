@@ -74,6 +74,12 @@ describe("configuration loading", () => {
 
     fs.writeFileSync(target, JSON.stringify({ embedding: { dimensions: 4097 } }), "utf8");
     expect(() => loadConfig(root)).toThrow(/embedding\.dimensions.*at most 4096/);
+
+    fs.writeFileSync(target, JSON.stringify({ embedding: { timeoutMs: 120001 } }), "utf8");
+    expect(() => loadConfig(root)).toThrow(/embedding\.timeoutMs.*at most 120000/);
+
+    fs.writeFileSync(target, JSON.stringify({ embedding: { batchSize: 257 } }), "utf8");
+    expect(() => loadConfig(root)).toThrow(/embedding\.batchSize.*at most 256/);
   });
 
   it("protects local graph artifacts while allowing config to be tracked", () => {

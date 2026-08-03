@@ -1,6 +1,8 @@
 import type { GraphEntity, MDGraphConfig, SearchQueryMode, SearchResult } from "../types.js";
 import { GraphRepository } from "../db/repositories.js";
 import { embedTextLocal, supportsLocalEmbedding } from "../semantic/local-embedding.js";
+import { createEmbeddingProvider, supportsSynchronousEmbeddingProvider } from "../semantic/provider-registry.js";
+import { EmbeddingProviderError, embeddingDiagnostic, validateEmbeddingVector, type EmbeddingDiagnostic } from "../semantic/provider.js";
 import { ftsQueryFor } from "../utils/fts.js";
 import { normalizeEntityName } from "../utils/text.js";
 
@@ -23,8 +25,9 @@ export interface SearchExplanation {
     fusion: "rrf";
     fusionK: number;
     channels: SearchChannel[];
-    optionalReranker: "none" | "local-hash";
+    optionalReranker: string;
   };
+  semanticDiagnostic?: EmbeddingDiagnostic;
   matchedEntities: Array<{ name: string; kind: GraphEntity["kind"]; documentFrequency: number }>;
   results: SearchResult[];
 }
@@ -33,6 +36,14 @@ interface ChannelSearchResult {
   channel: SearchChannel;
   rank: number;
   result: SearchResult;
+}
+
+interface AsyncSearchExecution {
+  results: SearchResult[];
+  queryMode: SearchQueryMode;
+  semanticRequested: boolean;
+  semanticProvider?: string;
+  semanticDiagnostic?: EmbeddingDiagnostic;
 }
 
 const RRF_K = 60;
@@ -45,12 +56,6 @@ export function searchGraph(
   limit = config.search.defaultLimit,
   options: SearchOptions = {}
 ): SearchResult[] {
-  const entityCandidates = extractQueryEntityCandidates(query);
-  const matchedEntities = repository.findEntitiesByNormalizedNames(entityCandidates.map(normalizeEntityName));
-  const entityDocumentFrequencies = repository.entityDocumentFrequencies(matchedEntities.map((entity) => entity.id));
-  const definitionRows = repository.findEntityDefinitions(matchedEntities.map((entity) => entity.id));
-  const ftsQuery = ftsQueryFor(query);
-  const ftsRows = ftsQuery ? repository.searchChunks(ftsQuery, limit * 2) : [];
   const mode = resolveSearchMode(config, options);
   const semanticRows = mode.semanticActive
     ? repository.searchSemanticChunks(
@@ -60,6 +65,33 @@ export function searchGraph(
       limit * 2
     )
     : [];
+  return rankSearchResults(repository, config, query, limit, semanticRows, mode.semanticActive ? config.embedding.provider : undefined);
+}
+
+export async function searchGraphAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  limit = config.search.defaultLimit,
+  options: SearchOptions = {}
+): Promise<SearchResult[]> {
+  return (await executeSearchGraphAsync(repository, config, query, limit, options)).results;
+}
+
+function rankSearchResults(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  limit: number,
+  semanticRows: ReturnType<GraphRepository["searchSemanticChunks"]>,
+  semanticProvider: string | undefined
+): SearchResult[] {
+  const entityCandidates = extractQueryEntityCandidates(query);
+  const matchedEntities = repository.findEntitiesByNormalizedNames(entityCandidates.map(normalizeEntityName));
+  const entityDocumentFrequencies = repository.entityDocumentFrequencies(matchedEntities.map((entity) => entity.id));
+  const definitionRows = repository.findEntityDefinitions(matchedEntities.map((entity) => entity.id));
+  const ftsQuery = ftsQueryFor(query);
+  const ftsRows = ftsQuery ? repository.searchChunks(ftsQuery, limit * 2) : [];
   const results: ChannelSearchResult[] = [];
 
   for (const [index, row] of definitionRows.entries()) {
@@ -106,7 +138,7 @@ export function searchGraph(
         section: row.section,
         score: adjustScore(80 + row.similarity * 50, row.document, penalty),
         reason: highFrequencyReason(
-          `local semantic vector match (${row.similarity.toFixed(3)})`,
+          `${semanticProvider === "local-hash" ? "local" : semanticProvider ?? "configured"} semantic vector match (${row.similarity.toFixed(3)})`,
           matched,
           entityDocumentFrequencies,
           config.search.highFrequencyEntityThreshold
@@ -135,27 +167,54 @@ export function explainSearchGraph(
   limit = config.search.defaultLimit,
   options: SearchOptions = {}
 ): SearchExplanation {
+  const mode = resolveSearchMode(config, options);
+  const results = searchGraph(repository, config, query, limit, options);
+  return buildSearchExplanation(repository, config, query, limit, results, {
+    queryMode: mode.queryMode,
+    semanticRequested: mode.semanticRequested,
+    semanticProvider: mode.semanticActive ? config.embedding.provider : undefined
+  });
+}
+
+export async function explainSearchGraphAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  limit = config.search.defaultLimit,
+  options: SearchOptions = {}
+): Promise<SearchExplanation> {
+  const execution = await executeSearchGraphAsync(repository, config, query, limit, options);
+  return buildSearchExplanation(repository, config, query, limit, execution.results, execution);
+}
+
+function buildSearchExplanation(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  limit: number,
+  results: SearchResult[],
+  execution: Pick<AsyncSearchExecution, "queryMode" | "semanticRequested" | "semanticProvider" | "semanticDiagnostic">
+): SearchExplanation {
   const entityCandidates = extractQueryEntityCandidates(query);
   const matchedEntities = repository.findEntitiesByNormalizedNames(entityCandidates.map(normalizeEntityName));
   const frequencies = repository.entityDocumentFrequencies(matchedEntities.map((entity) => entity.id));
-  const mode = resolveSearchMode(config, options);
-  const results = searchGraph(repository, config, query, limit, options);
   const channels = channelsForResults(results);
-  const semanticActive = mode.semanticActive && channels.includes("semantic");
+  const semanticActive = channels.includes("semantic");
   return {
     query,
     limit,
-    queryMode: mode.queryMode,
+    queryMode: execution.queryMode,
     entityCandidates,
     ftsQuery: ftsQueryFor(query),
-    semanticEnabled: mode.semanticRequested,
+    semanticEnabled: execution.semanticRequested,
     semanticActive,
     ranking: {
       fusion: "rrf",
       fusionK: RRF_K,
       channels,
-      optionalReranker: semanticActive ? "local-hash" : "none"
+      optionalReranker: semanticActive ? execution.semanticProvider ?? config.embedding.provider : "none"
     },
+    semanticDiagnostic: execution.semanticDiagnostic,
     matchedEntities: matchedEntities.map((entity) => ({
       name: entity.name,
       kind: entity.kind,
@@ -163,6 +222,55 @@ export function explainSearchGraph(
     })),
     results
   };
+}
+
+async function executeSearchGraphAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  limit: number,
+  options: SearchOptions
+): Promise<AsyncSearchExecution> {
+  const request = resolveSearchRequest(config, options);
+  if (!request.semanticRequested) {
+    return {
+      results: rankSearchResults(repository, config, query, limit, [], undefined),
+      queryMode: request.queryMode,
+      semanticRequested: false
+    };
+  }
+
+  let providerId = config.embedding.provider;
+  try {
+    const vectorCount = repository.semanticVectorCount(config.embedding.provider, config.embedding.model, config.embedding.dimensions);
+    const chunkCount = repository.counts().chunks;
+    if (vectorCount !== chunkCount || chunkCount === 0) {
+      throw new EmbeddingProviderError(
+        "vectors_unavailable",
+        config.embedding.provider,
+        `Semantic vectors for ${config.embedding.provider}/${config.embedding.model}/${config.embedding.dimensions} cover ${vectorCount}/${chunkCount} chunks; run \`mdgraph index --full --semantic\`.`
+      );
+    }
+    const provider = createEmbeddingProvider(config.embedding);
+    providerId = provider.id;
+    const queryVector = await provider.embedQuery(query);
+    validateEmbeddingVector(provider.id, queryVector, provider.dimensions);
+    const semanticRows = repository.searchSemanticChunks(queryVector, provider.id, provider.model, limit * 2);
+    return {
+      results: rankSearchResults(repository, config, query, limit, semanticRows, provider.id),
+      queryMode: request.queryMode,
+      semanticRequested: true,
+      semanticProvider: provider.id
+    };
+  } catch (error) {
+    return {
+      results: rankSearchResults(repository, config, query, limit, [], undefined),
+      queryMode: request.queryMode,
+      semanticRequested: true,
+      semanticProvider: providerId,
+      semanticDiagnostic: embeddingDiagnostic(error, providerId)
+    };
+  }
 }
 
 export function extractQueryEntityCandidates(query: string): string[] {
@@ -246,10 +354,20 @@ function resolveSearchMode(config: MDGraphConfig, options: SearchOptions): {
   semanticRequested: boolean;
   semanticActive: boolean;
 } {
+  const { queryMode, semanticRequested } = resolveSearchRequest(config, options);
+  const semanticActive = semanticRequested
+    && supportsSynchronousEmbeddingProvider(config.embedding.provider)
+    && supportsLocalEmbedding({ ...config, embedding: { ...config.embedding, enabled: true } });
+  return { queryMode, semanticRequested, semanticActive };
+}
+
+function resolveSearchRequest(config: MDGraphConfig, options: SearchOptions): {
+  queryMode: SearchQueryMode;
+  semanticRequested: boolean;
+} {
   const queryMode = options.queryMode ?? (options.semantic ? "semantic" : "auto");
   const semanticRequested = queryMode === "semantic" || (queryMode === "auto" && (options.semantic ?? config.embedding.enabled));
-  const semanticActive = semanticRequested && supportsLocalEmbedding({ ...config, embedding: { ...config.embedding, enabled: true } });
-  return { queryMode, semanticRequested, semanticActive };
+  return { queryMode, semanticRequested };
 }
 
 function applyReciprocalRankFusion(results: ChannelSearchResult[]): SearchResult[] {

@@ -4,7 +4,9 @@ export const CONFIG_LIMITS = {
   searchMaxDepth: 12,
   searchMaxContextChars: 200_000,
   searchHighFrequencyEntityThreshold: 100_000,
-  embeddingDimensions: 4096
+  embeddingDimensions: 4096,
+  embeddingTimeoutMs: 120_000,
+  embeddingBatchSize: 256
 } as const;
 
 export const MCP_LIMITS = {

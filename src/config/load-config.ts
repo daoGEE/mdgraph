@@ -69,7 +69,10 @@ export const DEFAULT_CONFIG: MDGraphConfig = {
     enabled: false,
     provider: "local-hash",
     model: "mdgraph-local-hash-v1",
-    dimensions: 128
+    dimensions: 128,
+    endpoint: "http://127.0.0.1:11434",
+    timeoutMs: 30_000,
+    batchSize: 16
   }
 };
 
@@ -172,7 +175,10 @@ function mergeConfig(base: MDGraphConfig, override: Partial<MDGraphConfig>): MDG
       enabled: boolOr(override.embedding?.enabled, base.embedding.enabled),
       provider: stringOr(override.embedding?.provider, base.embedding.provider),
       model: stringOr(override.embedding?.model, base.embedding.model),
-      dimensions: boundedPositiveInteger(override.embedding?.dimensions, base.embedding.dimensions, "embedding.dimensions", CONFIG_LIMITS.embeddingDimensions)
+      dimensions: boundedPositiveInteger(override.embedding?.dimensions, base.embedding.dimensions, "embedding.dimensions", CONFIG_LIMITS.embeddingDimensions),
+      endpoint: stringOr(override.embedding?.endpoint, base.embedding.endpoint ?? "http://127.0.0.1:11434"),
+      timeoutMs: boundedPositiveInteger(override.embedding?.timeoutMs, base.embedding.timeoutMs ?? 30_000, "embedding.timeoutMs", CONFIG_LIMITS.embeddingTimeoutMs),
+      batchSize: boundedPositiveInteger(override.embedding?.batchSize, base.embedding.batchSize ?? 16, "embedding.batchSize", CONFIG_LIMITS.embeddingBatchSize)
     }
   };
 }

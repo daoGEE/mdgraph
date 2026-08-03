@@ -62,8 +62,11 @@
 
 - `query`、`limit`、`queryMode`、`entityCandidates`、`ftsQuery`、`semanticEnabled` 和 `semanticActive`。
 - `ranking`：`fusion`、`fusionK`、`channels` 和 `optionalReranker`。
+- `semanticDiagnostic`：可选 provider 降级详情，包含 `code`、`provider`、`message` 和 `degraded: true`。
 - `matchedEntities`：排序诊断使用的实体名称、类型和文档频次。
 - `results`：与 `search --json` 相同的搜索结果记录。
+
+请求了 semantic retrieval 但无法运行时，`search` 仍返回 FTS5/entity/graph 结果。CLI 会把降级诊断写到 stderr，从而保持非 explain `search --json` 数组兼容。
 
 ## `context --json`
 
@@ -72,6 +75,8 @@
 - `query`：原始查询文本。
 - `maxChars`：配置的上下文预算。
 - `usedChars`：已打包字符数。
+- `packing`：additive 打包 metadata，包含 `strategy`；可选 MMR 还会报告 `similarity`、`mmrLambda` 和可选 `redundancySkippedItems`。
+- `semanticDiagnostic`：可选 provider 降级详情；未请求 semantic retrieval 或正常完成时不出现。
 - `items`：上下文条目，包含 `nodeId`、`documentId`、可选 `sectionId`、可选 `anchor`、`path`、`title`、可选 `heading`、可选 `lines`、`reason`、`matchedEntities`、可选 `edgePath`、可选 `sourceRefs`、可选 `riskNotes` 和 `content`。
 
 `riskNotes` 可包含生命周期/trust 提醒，以及确定性的内容风险提示，例如 prompt-injection 文本、active HTML/data URI 或隐藏 Unicode 格式字符。
@@ -83,8 +88,36 @@
 - `seedNodes`、`visitedNodes` 和 `expandedEdges`。
 - `skippedVisitedNodes`、`skippedByNodeLimit` 和 `skippedByDepth`。
 - `candidateCount`、`directCandidates` 和 `expandedCandidates`。
-- `packingStrategy`、`packedItems`、`packedUniqueDocuments` 和 `packingDiversityRatio`。
-- `budgetTruncatedItems` 和 `budgetSkippedItems`。
+- `packingStrategy`、可选 `packingSimilarity`、可选 `mmrLambda`、可选逐项 `packingSelections`、`packedItems`、`packedUniqueDocuments` 和 `packingDiversityRatio`。每个 MMR selection 报告 `nodeId`、`path`、`queryRelevance`、`redundancyPenalty`、`mmrScore` 和 `similaritySource`。
+- `budgetTruncatedItems`、`budgetSkippedItems` 和可选 `redundancySkippedItems`。
+
+兼容默认值为 `mmr-style-document-round-robin`。`--packing mmr` 为 opt-in，并可通过 `--mmr-lambda <0..1>` 调整；缺少已存向量时回退到确定性词法 Jaccard 相似度。
+
+## `query --json`（experimental）
+
+`mdgraph query <expression> --json` 返回：
+
+- `query`：原始结构化表达式。
+- `ast`：已校验的 expression tree，以及 `orderBy` 和 `limit`。
+- `execution`：`strategy`（`parameterized-sql` 或 `parameterized-hybrid-doctor`）、有序 `stages`、`parameterCount` 和 `doctorHealthEvaluated`。
+- `total`、`returned` 和 `truncated`：匹配与 limit 诊断。
+- `items`：包含 `document`、`reason`、`predicateFields` 和执行 `provenance` 的条目。
+
+`document` 遵循 `GraphDocument`，包括可选 `updatedAt`，其值为索引时记录的源 Markdown mtime。Health predicate 会在索引陈旧时失败。该输出是 experimental，不改变稳定 `search` 契约。
+
+## `relationships derive --json`（experimental）
+
+`mdgraph relationships derive --json` 返回：
+
+- `algorithmVersion`、`generatedAt`、`provider`、`model` 和 `dimensions`。
+- `options`：实际使用的 `threshold`、`maxNeighbors`、`minEvidence` 和 `dryRun`。
+- `qualityGate`：gate ID、`passed` 和具名运行时检查。
+- `corpus`：document/chunk/vector coverage、采样、pair evaluation 和 vector comparison 诊断。
+- `relationships`：规范化 document pair，以及 confidence 和独立 chunk/section evidence。
+- `relationshipPairs` 和 `directedEdges`。
+- `mutation`：`dryRun`、`removed` 和 `inserted` 计数。
+
+Stale index、lexical-hash provider、当前 profile vector coverage 不完整、不安全 option 或计算预算超限都会在 mutation 前失败。成功的非 dry-run 会原子替换 `RELATED_TO/embedding_similarity` edge。该输出是 experimental，不改变稳定的 index、search、GraphJSON 或 MCP 契约。
 
 ## `node --json`
 
@@ -113,14 +146,14 @@
 
 - `querySet`：默认是 `alpha`；传入 `--query-set cjk` 时为 `cjk`。
 - `limit`：每个 case 使用的搜索结果上限。
-- `ranking`：query mode、RRF 搜索融合、上下文打包策略、可选 reranker 状态、semantic-active case 数量、搜索通道、ranking reason 覆盖率和平均上下文多样性。
+- `ranking`：query mode、RRF 搜索融合、上下文打包策略、可选 reranker 状态、semantic-active case 数量、搜索通道、ranking reason 覆盖率、平均上下文多样性，以及可选的去重 `semanticDiagnostics`。
 - `generatedAt`：评估运行时间。
 - `summary`：`cases`、`passed`、`failed`、`averageTopKDocumentRecall`、`averageExpectedSectionRecall`、`averageContextPrecision`、`averageContextDiversity`、`averageLatencyMs` 和 `averageReturnedChars`。
 - `cases`：每个 case 的 `id`、`query`、`passed`、`expected`、`observed` 和 `metrics`。
 
-每个 case 的 `expected` 包含预期文档、章节、实体、边类型和 source refs。`observed` 包含排序后的搜索文档路径、上下文条目路径/标题/reason、匹配实体、已解析实体、已解析 source refs、观测到的边类型、可选 trace 结果和排序诊断。`metrics` 包含 top-K 文档召回、预期章节召回、上下文精度、实体召回、source-ref 召回、边类型覆盖、trace 成功率、延迟、返回字符数、预算适配、fanout、reason 覆盖率、ranking reason 覆盖率和上下文多样性。
+每个 case 的 `expected` 包含预期文档、章节、实体、边类型和 source refs。`observed` 包含排序后的搜索文档路径、上下文条目路径/标题/reason、匹配实体、已解析实体、已解析 source refs、观测到的边类型、可选 trace 结果，以及带可选 `semanticDiagnostic` 的排序诊断。`metrics` 包含 top-K 文档召回、预期章节召回、上下文精度、实体召回、source-ref 召回、边类型覆盖、trace 成功率、延迟、返回字符数、预算适配、fanout、reason 覆盖率、ranking reason 覆盖率和上下文多样性。
 
-`--query-set cjk` 使用仓库自有的中文/日文期望记录，用于度量轻量 CJK n-gram 预处理基线下的检索质量。`--query-mode semantic` 请求可选语义搜索，并报告本地语义 reranker 是否实际生效。`mdgraph eval` 不会自动索引目标项目，运行前需先执行 `mdgraph index`。
+`--query-set cjk` 使用仓库自有的中文/日文期望记录，用于度量轻量 CJK n-gram 预处理基线下的检索质量。`--query-mode semantic` 请求可选语义搜索，并报告配置的 semantic provider 是否实际生效。`mdgraph eval` 不会自动索引目标项目，运行前需先执行 `mdgraph index`。
 
 ## `export graphjson --json`
 
@@ -144,7 +177,7 @@ Structural profile 不包含 chunks、chunk content、section content、vectors�
 - `warnings`：非致命兼容性说明。
 - 可读取时的 `format`、`formatVersion`、`schemaVersion`、`graphHash`、`counts` 和 `exportedCounts`。
 
-当 `valid` 为 `false` 时命令返回非零退出码。0.7 不支持 GraphJSON merge import。过大或过深嵌套的 GraphJSON 会在校验前被拒绝。
+当 `valid` 为 `false` 时命令返回非零退出码。不支持 GraphJSON merge import。过大或过深嵌套的 GraphJSON 会在校验前被拒绝。
 
 ## `export mermaid trace --json`
 
@@ -188,7 +221,7 @@ Bridge 只读取显式传入的 MDGraph JSON artifact；该 artifact 使用 `fil
 - `manifestPath`：`manifest.json` 的绝对路径。
 - `manifest`：bundle manifest，包含 `format`、`formatVersion`、`schemaVersion`、`mdgraphVersion`、`createdAt`、`visibility`、`sourceHash`、`configHash`、`provenance`、`counts`、`documents` 和可选 `reports`。
 
-私有 bundle 包含 `manifest.json`、`graph.db`、`config.json` 和 `reports/status-storage.json` 快照。`sourceHash` 来自规范化配置与按路径排序的文档 path/hash 记录；不包含 Markdown 正文或绝对项目根目录。0.6 不支持 public 或脱敏 bundle profile。
+私有 bundle 包含 `manifest.json`、`graph.db`、`config.json` 和 `reports/status-storage.json` 快照。`sourceHash` 来自规范化配置与按路径排序的文档 path/hash 记录；不包含 Markdown 正文或绝对项目根目录。不支持 public 或脱敏 bundle profile。
 
 ## `bundle verify --json`
 
@@ -254,6 +287,7 @@ Diff 只比较 Markdown 图记录、source refs 和 doctor warning codes。它�
 - `projectRoot`。
 - `state`：`disabled`、`not_indexed`、`ready`、`unsupported_provider` 或 `needs_reindex`。
 - `enabled`、`provider`、`model`、`dimensions` 和 `providerSupported`：当前配置的 embedding provider 状态。
+- `capability`：`lexical-hash`、`semantic-model` 或 `unknown`；`runtimeStatus`：`available`、`unavailable`、`model_missing`、`unchecked` 或 `disabled`；runtime check 失败时可带 `runtimeReason`。
 - `indexed`、`chunks`、`vectors`、`vectorStorageFormat` 和 `indexedProviders`。
 - `guidance`：可行动的下一步，例如运行 `mdgraph index --semantic`、provider 变化后重新 embedding，或 unsupported provider 降级到 FTS5 和 graph search。
 

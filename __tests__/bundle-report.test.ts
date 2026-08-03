@@ -19,7 +19,7 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("v0.6.1 schema metadata", () => {
+describe("schema metadata", () => {
   it("records current schema metadata and marks missing metadata on existing databases as legacy", async () => {
     const root = makeTempRoot("mdgraph-schema-metadata-");
     createFixtureDocs(root);
@@ -65,7 +65,7 @@ describe("v0.6.1 schema metadata", () => {
   });
 });
 
-describe("v0.6.1 bundle and report", () => {
+describe("bundle and report", () => {
   it("computes deterministic source hashes without document content", async () => {
     const root = makeTempRoot("mdgraph-source-hash-");
     createFixtureDocs(root);

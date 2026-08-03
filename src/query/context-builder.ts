@@ -1,11 +1,16 @@
 import type { EdgeKind, GraphDocument, GraphEdge, GraphEntity, MDGraphConfig, Provenance, SearchResult, SourceRef, TrustTier } from "../types.js";
 import { GraphRepository, type ChunkSearchRow, type NodeRecord } from "../db/repositories.js";
-import { searchGraph, type SearchOptions } from "./search.js";
+import { explainSearchGraphAsync, searchGraph, type SearchOptions } from "./search.js";
+import type { EmbeddingDiagnostic } from "../semantic/provider.js";
 import { scanContentRiskLines } from "../utils/content-risk.js";
 import { normalizePath, uniqueStrings } from "../utils/text.js";
 
 const DEFAULT_MAX_CONTEXT_NODES = 16;
 export const CONTEXT_PACKING_STRATEGY = "mmr-style-document-round-robin" as const;
+export const CONTEXT_PACKING_STRATEGIES = [CONTEXT_PACKING_STRATEGY, "mmr"] as const;
+export type ContextPackingStrategy = typeof CONTEXT_PACKING_STRATEGIES[number];
+export const DEFAULT_MMR_LAMBDA = 0.65;
+const MMR_SAME_DOCUMENT_REDUNDANCY_THRESHOLD = 0.8;
 
 export interface ContextItem {
   nodeId: string;
@@ -56,11 +61,20 @@ export interface ContextResult {
   query: string;
   maxChars: number;
   usedChars: number;
+  packing: ContextPackingInfo;
   knownFiles?: string[];
   suggestedNextQueries?: string[];
   mode?: ContextAutoMode;
+  semanticDiagnostic?: EmbeddingDiagnostic;
   items: ContextItem[];
   debug?: ContextDebug;
+}
+
+export interface ContextPackingInfo {
+  strategy: ContextPackingStrategy;
+  similarity?: ContextPackingSimilarity;
+  mmrLambda?: number;
+  redundancySkippedItems?: number;
 }
 
 export interface ContextDebug {
@@ -73,15 +87,31 @@ export interface ContextDebug {
   candidateCount: number;
   directCandidates: number;
   expandedCandidates: number;
-  packingStrategy: typeof CONTEXT_PACKING_STRATEGY;
+  packingStrategy: ContextPackingStrategy;
+  packingSimilarity?: ContextPackingSimilarity;
+  mmrLambda?: number;
+  packingSelections?: ContextPackingSelection[];
   packedItems: number;
   packedUniqueDocuments: number;
   packingDiversityRatio: number;
   budgetTruncatedItems: number;
   budgetSkippedItems: number;
+  redundancySkippedItems?: number;
+}
+
+export type ContextPackingSimilarity = "embedding-cosine" | "hybrid" | "lexical-jaccard";
+
+export interface ContextPackingSelection {
+  nodeId: string;
+  path: string;
+  queryRelevance: number;
+  redundancyPenalty: number;
+  mmrScore: number;
+  similaritySource: "embedding-cosine" | "lexical-jaccard" | "none";
 }
 
 interface ContextCandidate extends ContextItem {
+  chunkId?: string;
   documentStatus: string;
   trustTier: TrustTier;
   trustTierDeclared: boolean;
@@ -103,6 +133,8 @@ export interface ContextBuildOptions {
   searchLimit?: number;
   maxDepth?: number;
   mode?: ContextAutoMode;
+  packingStrategy?: ContextPackingStrategy;
+  mmrLambda?: number;
   searchOptions?: SearchOptions;
 }
 
@@ -119,13 +151,22 @@ interface ContextCollection {
     | "packingDiversityRatio"
     | "budgetTruncatedItems"
     | "budgetSkippedItems"
+    | "redundancySkippedItems"
+    | "packingSimilarity"
+    | "mmrLambda"
+    | "packingSelections"
   >;
 }
 
 interface PackedContext {
   result: ContextResult;
+  packingStrategy: ContextPackingStrategy;
+  packingSimilarity?: ContextPackingSimilarity;
+  mmrLambda?: number;
+  packingSelections?: ContextPackingSelection[];
   budgetTruncatedItems: number;
   budgetSkippedItems: number;
+  redundancySkippedItems: number;
 }
 
 export function buildContext(
@@ -134,17 +175,50 @@ export function buildContext(
   query: string,
   options: ContextBuildOptions = {}
 ): ContextResult {
+  const searchLimit = positiveIntegerOr(options.searchLimit, config.search.defaultLimit * 2);
+  const results = searchGraph(repository, config, query, searchLimit, options.searchOptions);
+  return buildContextFromSearchResults(repository, config, query, results, options);
+}
+
+export async function buildContextAsync(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  options: ContextBuildOptions = {}
+): Promise<ContextResult> {
+  const searchLimit = positiveIntegerOr(options.searchLimit, config.search.defaultLimit * 2);
+  const explanation = await explainSearchGraphAsync(repository, config, query, searchLimit, options.searchOptions);
+  return buildContextFromSearchResults(repository, config, query, explanation.results, options, explanation.semanticDiagnostic);
+}
+
+export function buildContextFromSearchResults(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  results: SearchResult[],
+  options: ContextBuildOptions,
+  semanticDiagnostic?: EmbeddingDiagnostic
+): ContextResult {
   const knownFiles = normalizeKnownFiles(options.knownFiles ?? []);
   const maxChars = positiveIntegerOr(options.maxChars, config.search.maxContextChars);
-  const searchLimit = positiveIntegerOr(options.searchLimit, config.search.defaultLimit * 2);
   const maxDepth = positiveIntegerOr(options.maxDepth, config.search.maxDepth);
-  const results = searchGraph(repository, config, query, searchLimit, options.searchOptions);
   const collection = collectContextCandidates(repository, config, results, maxDepth);
   const candidates = knownFiles.length
     ? mergeKnownFileCandidates(repository, collection.candidates, knownFiles)
     : collection.candidates;
-  const packed = packContext(query, enrichContextCandidates(repository, candidates), maxChars, options.mode);
-  const result = addAgentHints(packed.result, knownFiles);
+  const packingStrategy = options.packingStrategy ?? CONTEXT_PACKING_STRATEGY;
+  const packed = packContext(
+    repository,
+    config,
+    query,
+    enrichContextCandidates(repository, candidates),
+    maxChars,
+    options.mode,
+    packingStrategy,
+    mmrLambdaOrDefault(options.mmrLambda)
+  );
+  const hinted = addAgentHints(packed.result, knownFiles);
+  const result = semanticDiagnostic ? { ...hinted, semanticDiagnostic } : hinted;
   if (!options.debug) {
     return result;
   }
@@ -155,14 +229,18 @@ export function buildContext(
       candidateCount: candidates.length,
       directCandidates: candidates.filter((candidate) => candidate.direct).length,
       expandedCandidates: candidates.filter((candidate) => !candidate.direct).length,
-      packingStrategy: CONTEXT_PACKING_STRATEGY,
+      packingStrategy: packed.packingStrategy,
+      packingSimilarity: packed.packingSimilarity,
+      mmrLambda: packed.mmrLambda,
+      packingSelections: packed.packingSelections,
       packedItems: result.items.length,
       packedUniqueDocuments: uniqueStrings(result.items.map((item) => item.path)).length,
       packingDiversityRatio: result.items.length
         ? Number((uniqueStrings(result.items.map((item) => item.path)).length / result.items.length).toFixed(4))
         : 0,
       budgetTruncatedItems: packed.budgetTruncatedItems,
-      budgetSkippedItems: packed.budgetSkippedItems
+      budgetSkippedItems: packed.budgetSkippedItems,
+      redundancySkippedItems: packed.redundancySkippedItems || undefined
     }
   };
 }
@@ -369,10 +447,12 @@ function collectContextCandidates(
 
 function enrichContextCandidates(repository: GraphRepository, candidates: ContextCandidate[]): ContextCandidate[] {
   return candidates.map((candidate) => {
+    const row = repository.contextChunkForNode(candidate.nodeId);
     const sourceRefs = sourceRefsForCandidate(repository, candidate);
     const riskNotes = riskNotesForCandidate(candidate);
     return {
       ...candidate,
+      chunkId: row?.chunk.id,
       sourceRefs: sourceRefs.length ? sourceRefs : undefined,
       riskNotes: riskNotes.length ? riskNotes : undefined
     };
@@ -461,17 +541,29 @@ function compareContextCandidates(left: ContextCandidate, right: ContextCandidat
   return right.score - left.score;
 }
 
-function packContext(query: string, candidates: ContextCandidate[], maxChars: number, mode: ContextAutoMode | undefined): PackedContext {
+function packContext(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  query: string,
+  candidates: ContextCandidate[],
+  maxChars: number,
+  mode: ContextAutoMode | undefined,
+  packingStrategy: ContextPackingStrategy,
+  mmrLambda: number
+): PackedContext {
+  const ranking = packingStrategy === "mmr"
+    ? rankCandidatesWithMmr(repository, config, candidates, mmrLambda)
+    : { candidates, redundancySkippedItems: 0 };
   const items: ContextItem[] = [];
   let usedChars = 0;
   let budgetTruncatedItems = 0;
   let budgetSkippedItems = 0;
 
-  for (let index = 0; index < candidates.length; index += 1) {
-    const candidate = candidates[index];
+  for (let index = 0; index < ranking.candidates.length; index += 1) {
+    const candidate = ranking.candidates[index];
     const remaining = maxChars - usedChars;
     if (remaining <= 0) {
-      budgetSkippedItems += candidates.length - index;
+      budgetSkippedItems += ranking.candidates.length - index;
       break;
     }
     const content = trimToBudget(candidate.content, remaining);
@@ -501,7 +593,175 @@ function packContext(query: string, candidates: ContextCandidate[], maxChars: nu
     });
   }
 
-  return { result: { query, maxChars, usedChars, mode, items }, budgetTruncatedItems, budgetSkippedItems };
+  return {
+    result: {
+      query,
+      maxChars,
+      usedChars,
+      mode,
+      items,
+      packing: {
+        strategy: packingStrategy,
+        similarity: ranking.packingSimilarity,
+        mmrLambda: packingStrategy === "mmr" ? mmrLambda : undefined,
+        redundancySkippedItems: ranking.redundancySkippedItems || undefined
+      }
+    },
+    packingStrategy,
+    packingSimilarity: ranking.packingSimilarity,
+    mmrLambda: packingStrategy === "mmr" ? mmrLambda : undefined,
+    packingSelections: ranking.packingSelections,
+    budgetTruncatedItems,
+    budgetSkippedItems,
+    redundancySkippedItems: ranking.redundancySkippedItems
+  };
+}
+
+interface MmrRanking {
+  candidates: ContextCandidate[];
+  packingSimilarity?: ContextPackingSimilarity;
+  packingSelections?: ContextPackingSelection[];
+  redundancySkippedItems: number;
+}
+
+function rankCandidatesWithMmr(
+  repository: GraphRepository,
+  config: MDGraphConfig,
+  candidates: ContextCandidate[],
+  lambda: number
+): MmrRanking {
+  if (!candidates.length) {
+    return {
+      candidates: [],
+      packingSimilarity: "lexical-jaccard",
+      packingSelections: [],
+      redundancySkippedItems: 0
+    };
+  }
+
+  const vectors = repository.chunkVectors(
+    candidates.flatMap((candidate) => candidate.chunkId ? [candidate.chunkId] : []),
+    config.embedding.provider,
+    config.embedding.model,
+    config.embedding.dimensions
+  );
+  const tokenSets = new Map(candidates.map((candidate) => [candidate.nodeId, tokensForSimilarity(candidate.content)]));
+  const remaining = candidates.map((candidate, order) => ({ candidate, order }));
+  const selected: ContextCandidate[] = [];
+  const selections: ContextPackingSelection[] = [];
+  let redundancySkippedItems = 0;
+  const maximumScore = Math.max(...candidates.map((candidate) => Math.max(0, candidate.score)), 1);
+
+  while (remaining.length) {
+    const scored = remaining.map((entry) => {
+      const queryRelevance = clamp01(Math.max(0, entry.candidate.score) / maximumScore);
+      const similarities = selected.map((other) => candidateSimilarity(entry.candidate, other, vectors, tokenSets));
+      const mostRedundant = similarities.reduce<{ value: number; source: ContextPackingSelection["similaritySource"] }>(
+        (best, current) => current.value > best.value ? current : best,
+        { value: 0, source: "none" }
+      );
+      return {
+        ...entry,
+        queryRelevance,
+        redundancyPenalty: mostRedundant.value,
+        similaritySource: mostRedundant.source,
+        mmrScore: lambda * queryRelevance - (1 - lambda) * mostRedundant.value
+      };
+    }).sort((left, right) => (
+      right.mmrScore - left.mmrScore
+      || right.queryRelevance - left.queryRelevance
+      || left.order - right.order
+    ));
+    const best = scored[0];
+    const remainingIndex = remaining.findIndex((entry) => entry.order === best.order);
+    remaining.splice(remainingIndex, 1);
+
+    const repeatsSelectedDocument = selected.some((candidate) => candidate.path === best.candidate.path);
+    if (repeatsSelectedDocument && best.redundancyPenalty >= MMR_SAME_DOCUMENT_REDUNDANCY_THRESHOLD) {
+      redundancySkippedItems += 1;
+      continue;
+    }
+
+    selected.push(best.candidate);
+    selections.push({
+      nodeId: best.candidate.nodeId,
+      path: best.candidate.path,
+      queryRelevance: roundScore(best.queryRelevance),
+      redundancyPenalty: roundScore(best.redundancyPenalty),
+      mmrScore: roundScore(best.mmrScore),
+      similaritySource: best.similaritySource
+    });
+  }
+
+  const vectorCandidateCount = candidates.filter((candidate) => candidate.chunkId && vectors.has(candidate.chunkId)).length;
+  return {
+    candidates: selected,
+    packingSimilarity: vectorCandidateCount === candidates.length
+      ? "embedding-cosine"
+      : vectorCandidateCount > 1 ? "hybrid" : "lexical-jaccard",
+    packingSelections: selections,
+    redundancySkippedItems
+  };
+}
+
+function candidateSimilarity(
+  left: ContextCandidate,
+  right: ContextCandidate,
+  vectors: Map<string, number[]>,
+  tokenSets: Map<string, Set<string>>
+): { value: number; source: "embedding-cosine" | "lexical-jaccard" } {
+  const leftVector = left.chunkId ? vectors.get(left.chunkId) : undefined;
+  const rightVector = right.chunkId ? vectors.get(right.chunkId) : undefined;
+  if (leftVector && rightVector && leftVector.length === rightVector.length) {
+    return { value: clamp01(cosineSimilarity(leftVector, rightVector)), source: "embedding-cosine" };
+  }
+  return {
+    value: jaccardSimilarity(tokenSets.get(left.nodeId) ?? new Set(), tokenSets.get(right.nodeId) ?? new Set()),
+    source: "lexical-jaccard"
+  };
+}
+
+function cosineSimilarity(left: number[], right: number[]): number {
+  let dot = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    dot += left[index] * right[index];
+    leftMagnitude += left[index] * left[index];
+    rightMagnitude += right[index] * right[index];
+  }
+  return leftMagnitude > 0 && rightMagnitude > 0 ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
+}
+
+function tokensForSimilarity(content: string): Set<string> {
+  return new Set(content.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
+}
+
+function jaccardSimilarity(left: Set<string>, right: Set<string>): number {
+  if (!left.size && !right.size) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      intersection += 1;
+    }
+  }
+  return intersection / (left.size + right.size - intersection);
+}
+
+function mmrLambdaOrDefault(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : DEFAULT_MMR_LAMBDA;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function roundScore(value: number): number {
+  return Number(value.toFixed(4));
 }
 
 function candidateFromSearchResult(result: SearchResult): ContextCandidate {

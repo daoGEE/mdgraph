@@ -15,6 +15,12 @@ import type {
 import { decodeFloat32Vector, encodeFloat32Vector } from "../semantic/vector-codec.js";
 import { ftsIndexContent } from "../utils/fts.js";
 import { normalizePath, slugifyHeading } from "../utils/text.js";
+import type {
+  StructuredQueryAST,
+  StructuredQueryExpression,
+  StructuredQueryPredicate,
+  StructuredQuerySort
+} from "../query/structured-query.js";
 
 export interface StatusCounts {
   documents: number;
@@ -117,6 +123,15 @@ export interface SemanticSearchRow extends ChunkSearchRow {
   similarity: number;
 }
 
+export interface SemanticRelationshipChunk extends ChunkSearchRow {
+  vector: number[];
+}
+
+export interface SemanticRelationshipCorpus {
+  chunks: SemanticRelationshipChunk[];
+  invalidVectors: number;
+}
+
 export interface DocumentLinkStats {
   document: GraphDocument;
   nonContainmentEdges: number;
@@ -126,6 +141,18 @@ export interface DocumentLinkStats {
 export interface DefinitionCollision {
   entity: GraphEntity;
   documents: GraphDocument[];
+}
+
+export interface StructuredDocumentQueryRows {
+  documents: GraphDocument[];
+  total: number;
+  truncated: boolean;
+  parameterCount: number;
+}
+
+export interface StructuredPredicateDocumentIds {
+  documentIds: Set<string>;
+  parameterCount: number;
 }
 
 type InsertMode = "strict" | "incremental";
@@ -361,6 +388,113 @@ export class GraphRepository {
       .slice(0, limit);
   }
 
+  semanticVectorCount(provider: string, model: string, dimensions: number): number {
+    const row = this.db.prepare(`
+      SELECT count(*) AS count
+      FROM chunk_vectors
+      WHERE provider = ? AND model = ? AND dimensions = ?
+    `).get(provider, model, dimensions) as { count: number };
+    return row.count;
+  }
+
+  chunkVectors(chunkIds: string[], provider: string, model: string, dimensions: number): Map<string, number[]> {
+    const uniqueChunkIds = [...new Set(chunkIds.filter(Boolean))];
+    if (!uniqueChunkIds.length) {
+      return new Map();
+    }
+    const placeholders = uniqueChunkIds.map(() => "?").join(", ");
+    const rows = this.db.prepare(`
+      SELECT chunk_id, vector_blob
+      FROM chunk_vectors
+      WHERE provider = ? AND model = ? AND dimensions = ? AND chunk_id IN (${placeholders})
+    `).all(provider, model, dimensions, ...uniqueChunkIds) as Array<{ chunk_id: string; vector_blob: unknown }>;
+    const vectors = new Map<string, number[]>();
+    for (const row of rows) {
+      try {
+        const vector = decodeFloat32Vector(row.vector_blob);
+        if (vector.length === dimensions) {
+          vectors.set(row.chunk_id, vector);
+        }
+      } catch {
+        // A malformed optional vector is unavailable to MMR; lexical similarity remains usable.
+      }
+    }
+    return vectors;
+  }
+
+  semanticRelationshipCorpus(provider: string, model: string, dimensions: number): SemanticRelationshipCorpus {
+    const rows = this.db.prepare(`
+      SELECT
+        d.id AS d_id, d.path AS d_path, d.title AS d_title, d.type AS d_type, d.status AS d_status,
+        d.hash AS d_hash, d.trust_tier AS d_trust_tier, d.updated_at AS d_updated_at,
+        d.indexed_at AS d_indexed_at, d.metadata_json AS d_metadata_json,
+        s.id AS s_id, s.document_id AS s_document_id, s.anchor AS s_anchor, s.heading AS s_heading,
+        s.level AS s_level, s.start_line AS s_start_line, s.end_line AS s_end_line, s.content AS s_content,
+        c.id AS c_id, c.document_id AS c_document_id, c.section_id AS c_section_id, c.content AS c_content,
+        c.token_estimate AS c_token_estimate, c.metadata_json AS c_metadata_json,
+        v.vector_blob AS vector_blob
+      FROM chunk_vectors v
+      JOIN chunks c ON c.id = v.chunk_id
+      JOIN documents d ON d.id = c.document_id
+      LEFT JOIN sections s ON s.id = c.section_id
+      WHERE v.provider = ? AND v.model = ? AND v.dimensions = ?
+      ORDER BY d.path ASC, s.start_line ASC, c.id ASC
+    `).all(provider, model, dimensions) as Record<string, unknown>[];
+    const chunks: SemanticRelationshipChunk[] = [];
+    let invalidVectors = 0;
+    for (const row of rows) {
+      try {
+        const vector = decodeFloat32Vector(row.vector_blob);
+        if (vector.length !== dimensions || !vector.every(Number.isFinite) || !vector.some((value) => value !== 0)) {
+          invalidVectors += 1;
+          continue;
+        }
+        chunks.push({
+          document: rowToDocument(row, "d_"),
+          section: row.s_id ? rowToSection(row, "s_") : undefined,
+          chunk: rowToChunk(row, "c_"),
+          rank: 0,
+          vector
+        });
+      } catch {
+        invalidVectors += 1;
+      }
+    }
+    return { chunks, invalidVectors };
+  }
+
+  replaceEmbeddingSimilarityEdges(edges: GraphEdge[]): { removed: number; inserted: number } {
+    for (const edge of edges) {
+      if (edge.kind !== "RELATED_TO" || edge.provenance !== "embedding_similarity") {
+        throw new Error("Derived relationship replacement accepts only RELATED_TO/embedding_similarity edges.");
+      }
+    }
+    const replace = this.db.transaction(() => {
+      const removed = this.db.prepare(
+        "DELETE FROM edges WHERE kind = 'RELATED_TO' AND provenance = 'embedding_similarity'"
+      ).run().changes;
+      const insert = this.db.prepare(`
+        INSERT INTO edges (id, from_id, to_id, kind, weight, confidence, provenance, metadata_json, created_at)
+        VALUES (@id, @fromId, @toId, @kind, @weight, @confidence, @provenance, @metadataJson, @createdAt)
+      `);
+      for (const edge of edges) {
+        insert.run({
+          id: edge.id,
+          fromId: edge.fromId,
+          toId: edge.toId,
+          kind: edge.kind,
+          weight: edge.weight,
+          confidence: edge.confidence,
+          provenance: edge.provenance,
+          metadataJson: toJson(edge.metadata),
+          createdAt: edge.createdAt
+        });
+      }
+      return { removed: Number(removed), inserted: edges.length };
+    });
+    return replace();
+  }
+
   contextChunkForNode(id: string): ChunkSearchRow | undefined {
     const chunkRow = this.db.prepare(`
       SELECT
@@ -585,6 +719,38 @@ export class GraphRepository {
     return rows.map((row) => rowToDocument(row));
   }
 
+  queryStructuredDocuments(ast: StructuredQueryAST): StructuredDocumentQueryRows {
+    const compiled = compileStructuredExpression(ast.expression);
+    const orderBy = structuredOrderBy(ast.orderBy);
+    const rows = this.db.prepare(`
+      SELECT d.*, COUNT(*) OVER() AS structured_total
+      FROM documents d
+      WHERE ${compiled.sql}
+      ORDER BY ${orderBy}
+      LIMIT ?
+    `).all(...compiled.parameters, ast.limit + 1) as Record<string, unknown>[];
+    return {
+      documents: rows.slice(0, ast.limit).map((row) => rowToDocument(row)),
+      total: rows.length ? numberValue(rows[0].structured_total) : 0,
+      truncated: rows.length > ast.limit,
+      parameterCount: compiled.parameters.length + 1
+    };
+  }
+
+  documentIdsMatchingStructuredPredicate(predicate: StructuredQueryPredicate): StructuredPredicateDocumentIds {
+    const compiled = compileStructuredPredicate(predicate);
+    const rows = this.db.prepare(`
+      SELECT d.id
+      FROM documents d
+      WHERE ${compiled.sql}
+      ORDER BY d.path
+    `).all(...compiled.parameters) as Array<{ id: string }>;
+    return {
+      documentIds: new Set(rows.map((row) => row.id)),
+      parameterCount: compiled.parameters.length
+    };
+  }
+
   allSections(): GraphSection[] {
     const rows = this.db.prepare("SELECT * FROM sections ORDER BY document_id, start_line, id").all() as Record<string, unknown>[];
     return rows.map((row) => rowToSection(row));
@@ -609,7 +775,7 @@ export class GraphRepository {
     const documents = this.allDocuments();
     const statement = this.db.prepare(`
       SELECT
-        SUM(CASE WHEN e.kind <> 'CONTAINS' THEN 1 ELSE 0 END) AS non_containment_edges,
+        SUM(CASE WHEN e.kind <> 'CONTAINS' AND e.provenance <> 'embedding_similarity' THEN 1 ELSE 0 END) AS non_containment_edges,
         SUM(CASE WHEN e.kind = 'DEFINES' THEN 1 ELSE 0 END) AS definition_edges
       FROM documents d
       LEFT JOIN sections s ON s.document_id = d.id
@@ -804,6 +970,183 @@ export class GraphRepository {
       this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
     }
   }
+}
+
+interface StructuredSqlFragment {
+  sql: string;
+  parameters: unknown[];
+}
+
+function compileStructuredExpression(expression: StructuredQueryExpression): StructuredSqlFragment {
+  if (expression.kind === "predicate") {
+    return compileStructuredPredicate(expression);
+  }
+  if (expression.kind === "not") {
+    const compiled = compileStructuredExpression(expression.expression);
+    return { sql: `NOT (${compiled.sql})`, parameters: compiled.parameters };
+  }
+  const left = compileStructuredExpression(expression.left);
+  const right = compileStructuredExpression(expression.right);
+  return {
+    sql: `(${left.sql}) ${expression.kind.toUpperCase()} (${right.sql})`,
+    parameters: [...left.parameters, ...right.parameters]
+  };
+}
+
+function compileStructuredPredicate(predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  switch (predicate.field) {
+    case "type":
+      return scalarPredicate("d.type", predicate);
+    case "status":
+      return scalarPredicate("d.status", predicate);
+    case "trust":
+      return scalarPredicate("d.trust_tier", predicate);
+    case "path":
+      return scalarPredicate("d.path", predicate);
+    case "title":
+      return scalarPredicate("d.title", predicate);
+    case "updated":
+      return datePredicate("d.updated_at", predicate);
+    case "indexed":
+      return datePredicate("d.indexed_at", predicate);
+    case "tag":
+      return tagPredicate(predicate);
+    case "edge":
+      return edgeKindPredicate(predicate);
+    case "health":
+      throw new Error("Doctor-derived health predicates require hybrid structured-query execution.");
+    default:
+      if (predicate.field.startsWith("edge.")) {
+        return edgeTargetPredicate(predicate.field.slice("edge.".length), predicate);
+      }
+      throw new Error(`Unsupported structured query field: ${String(predicate.field)}`);
+  }
+}
+
+function scalarPredicate(column: string, predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  const valueExpression = `COALESCE(${column}, '')`;
+  switch (predicate.operator) {
+    case "=":
+      return { sql: `LOWER(${valueExpression}) = LOWER(?)`, parameters: [predicate.value] };
+    case "!=":
+      return { sql: `LOWER(${valueExpression}) != LOWER(?)`, parameters: [predicate.value] };
+    case "~":
+      return { sql: `INSTR(LOWER(${valueExpression}), LOWER(?)) > 0`, parameters: [predicate.value] };
+    case "!~":
+      return { sql: `INSTR(LOWER(${valueExpression}), LOWER(?)) = 0`, parameters: [predicate.value] };
+    default:
+      throw new Error(`Unsupported scalar operator: ${predicate.operator}`);
+  }
+}
+
+function datePredicate(column: string, predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  const valueExpression = `COALESCE(${column}, '')`;
+  const dayOnly = /^\d{4}-\d{2}-\d{2}$/u.test(predicate.value);
+  if (dayOnly && (predicate.operator === "=" || predicate.operator === "!=")) {
+    return {
+      sql: `SUBSTR(${valueExpression}, 1, 10) ${predicate.operator} ?`,
+      parameters: [predicate.value]
+    };
+  }
+  const normalized = dayOnly ? `${predicate.value}T00:00:00.000Z` : new Date(predicate.value).toISOString();
+  const nextDay = dayOnly ? new Date(Date.parse(normalized) + 86_400_000).toISOString() : undefined;
+  if (dayOnly && predicate.operator === "<=") {
+    return { sql: `${valueExpression} < ?`, parameters: [nextDay] };
+  }
+  if (dayOnly && predicate.operator === ">") {
+    return { sql: `${valueExpression} >= ?`, parameters: [nextDay] };
+  }
+  return { sql: `${valueExpression} ${predicate.operator} ?`, parameters: [normalized] };
+}
+
+function tagPredicate(predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  const positiveOperator = predicate.operator === "!=" ? "=" : predicate.operator === "!~" ? "~" : predicate.operator;
+  const match = positiveOperator === "="
+    ? "LOWER(CAST(tag.value AS TEXT)) = LOWER(?)"
+    : "INSTR(LOWER(CAST(tag.value AS TEXT)), LOWER(?)) > 0";
+  const exists = `EXISTS (
+    SELECT 1
+    FROM json_each(COALESCE(d.metadata_json, '{}'), '$.tags') tag
+    WHERE ${match}
+  )`;
+  return {
+    sql: predicate.operator === "!=" || predicate.operator === "!~" ? `NOT (${exists})` : exists,
+    parameters: [predicate.value]
+  };
+}
+
+function edgeKindPredicate(predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  const exists = `EXISTS (
+    SELECT 1 FROM edges edge
+    WHERE (${structuredEdgeSourceSql()}) AND edge.kind = ?
+  )`;
+  return {
+    sql: predicate.operator === "!=" ? `NOT (${exists})` : exists,
+    parameters: [predicate.value.toUpperCase()]
+  };
+}
+
+function edgeTargetPredicate(kind: string, predicate: StructuredQueryPredicate): StructuredSqlFragment {
+  const negative = predicate.operator === "!=" || predicate.operator === "!~";
+  const contains = predicate.operator === "~" || predicate.operator === "!~";
+  const targetExpressions = [
+    "target_document.id",
+    "target_document.path",
+    "target_document.title",
+    "target_section.id",
+    "target_section.heading",
+    "target_section.anchor",
+    "target_entity.id",
+    "target_entity.name",
+    "target_source.id",
+    "target_source.path",
+    "edge.to_id"
+  ];
+  const targetMatch = targetExpressions
+    .map((expression) => contains
+      ? `INSTR(LOWER(COALESCE(${expression}, '')), LOWER(?)) > 0`
+      : `LOWER(COALESCE(${expression}, '')) = LOWER(?)`)
+    .join(" OR ");
+  const exists = `EXISTS (
+    SELECT 1
+    FROM edges edge
+    LEFT JOIN documents target_document ON target_document.id = edge.to_id
+    LEFT JOIN sections target_section ON target_section.id = edge.to_id
+    LEFT JOIN entities target_entity ON target_entity.id = edge.to_id
+    LEFT JOIN source_refs target_source ON target_source.id = edge.to_id
+    WHERE (${structuredEdgeSourceSql()})
+      AND edge.kind = ?
+      AND (${targetMatch})
+  )`;
+  return {
+    sql: negative ? `NOT (${exists})` : exists,
+    parameters: [kind.toUpperCase(), ...targetExpressions.map(() => predicate.value)]
+  };
+}
+
+function structuredEdgeSourceSql(): string {
+  return [
+    "edge.from_id = d.id",
+    "edge.from_id IN (SELECT section.id FROM sections section WHERE section.document_id = d.id)",
+    "edge.from_id IN (SELECT chunk.id FROM chunks chunk WHERE chunk.document_id = d.id)"
+  ].join(" OR ");
+}
+
+function structuredOrderBy(orderBy: StructuredQuerySort[]): string {
+  const columns: Record<StructuredQuerySort["field"], string> = {
+    path: "d.path",
+    title: "d.title",
+    type: "d.type",
+    status: "d.status",
+    trust: "d.trust_tier",
+    updated: "d.updated_at",
+    indexed: "d.indexed_at"
+  };
+  const clauses = orderBy.map((sort) => `${columns[sort.field]} ${sort.direction.toUpperCase()}`);
+  if (!orderBy.some((sort) => sort.field === "path")) {
+    clauses.push("d.path ASC");
+  }
+  return clauses.length ? clauses.join(", ") : "d.path ASC";
 }
 
 function definitionChunk(
@@ -1121,12 +1464,20 @@ function vectorToParams(vector: ChunkVector): Record<string, unknown> {
 }
 
 function cosine(left: number[], right: number[]): number {
-  const length = Math.min(left.length, right.length);
-  let score = 0;
-  for (let index = 0; index < length; index += 1) {
-    score += left[index] * right[index];
+  if (left.length !== right.length) {
+    return 0;
   }
-  return score;
+  let dot = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    dot += left[index] * right[index];
+    leftMagnitude += left[index] * left[index];
+    rightMagnitude += right[index] * right[index];
+  }
+  return leftMagnitude > 0 && rightMagnitude > 0
+    ? dot / Math.sqrt(leftMagnitude * rightMagnitude)
+    : 0;
 }
 
 function fromJson(value: unknown): Record<string, unknown> | undefined {

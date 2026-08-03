@@ -1,6 +1,6 @@
 # MDGraph Evaluation Questions
 
-These questions turn the plan's agent evaluation guidance into a reusable smoke set. Use them against a realistic project documentation corpus after indexing.
+These questions provide a reusable engineering smoke set for a realistic project documentation corpus. They test whether MDGraph returns the right documents, sections, entities, graph evidence, and context rather than treating a single ranking score as sufficient evidence.
 
 The built-in CLI entry is:
 
@@ -11,7 +11,23 @@ mdgraph eval --query-set cjk --path /path/to/project --json
 mdgraph eval --query-mode semantic --json
 ```
 
-`mdgraph eval` runs the repository-owned alpha query set by default and reports pass/fail plus lightweight retrieval metrics. It also reports deterministic ranking diagnostics: query mode, RRF search fusion channels, MMR-style document-diverse context packing, and optional semantic reranking status. `--query-set cjk` selects a small Chinese/Japanese retrieval baseline covered by lightweight CJK n-gram preprocessing. It is a deterministic engineering smoke check, not a completed IR benchmark or real agent A/B benchmark.
+`mdgraph eval` runs the repository-owned `alpha` query set by default and reports pass/fail plus lightweight retrieval metrics. It also reports query mode, RRF channels, compatibility context packing, and optional semantic-provider status. `--query-set cjk` selects a small Chinese/Japanese retrieval baseline covered by lightweight CJK n-gram preprocessing. These are deterministic engineering checks, not a completed IR benchmark or real-agent A/B benchmark.
+
+## Repository Regression Suites
+
+Maintainers use focused, non-public suites in addition to `mdgraph eval`. Their names describe the capability they protect. None adds a value to the frozen `eval --query-set alpha | cjk` enum or writes the repository's `.mdgraph` index.
+
+| Command | Capability protected | Recorded result / gate |
+|---|---|---|
+| `npm run baseline:historical` | Historical lexical-hash, entity, context, and watch-failure comparison snapshot | Keyword synonym Recall@5 `0.0000`; `local-hash` `0.5000`; historical entity precision/recall `0.5000 / 1.0000`; round-robin average pairwise Jaccard `0.3808` with three near-duplicate pairs. These values are intentionally immutable historical evidence. |
+| `npm run baseline:entity-extraction` | Source-aware Latin/CJK entity extraction | Precision `1.0000`, recall `1.0000`, CJK recall `1.0000`, and zero known-noise leakage; gates are `>= 0.90`, `>= 0.80`, `>= 0.80`, and zero. |
+| `npm run baseline:context-packing` | Opt-in true-MMR context packing | Expected-document recall remains `1.0000`; average pairwise Jaccard falls from `0.3808` to `0.1576` and near-duplicate pairs from three to zero, a `58.61%` redundancy reduction. |
+| `npm run baseline:structured-query` | Structured-query correctness and safety | Four of four annotated governance queries correct; parameterized repository predicates and SQL-injection isolation pass. |
+| `npm run baseline:related-documents` | Provider-gated related-document derivation | Precision `1.0000`, recall `1.0000`, complete provenance, and deterministic replacement; gates require precision `>= 0.90`, recall `>= 0.80`, complete provenance, and stable replacement. |
+
+The provider integration fixture also maps four no-overlap semantic cases through a deterministic fake Ollama endpoint and reaches Recall@5 `1.0000`. This validates batching, vector persistence, async routing, RRF participation, diagnostics, and provider attribution; it does not predict the quality of an arbitrary live model.
+
+Watcher tests cover startup/runtime `ENOSPC`, runtime `EMFILE`, startup `EACCES`, indexing failure, recovery, persistent in-process health, and explicit polling. See [Retrieval and Context](Retrieval_and_Context.md), [Operations](Operations.md), and [Structured Query and Relationships](Structured_Query_and_Relationships.md) for the user-facing behavior behind these suites.
 
 1. Why does a specific error code affect a specific user flow?
 2. Which older decisions does a given design document depend on?
@@ -45,7 +61,7 @@ The machine-readable expected records live in `src/evaluation/retrieval-eval.ts`
 
 ## CJK Expected Records
 
-The `cjk` query set is a v0.5 retrieval baseline for Chinese and Japanese Markdown. It uses expected records from the repository test fixture `createCjkFixtureDocs`, including Chinese design/API/runbook/spec documents and a Japanese design document. Its cases cover:
+The `cjk` query set is the built-in retrieval baseline for Chinese and Japanese Markdown. It uses expected records from the repository test fixture `createCjkFixtureDocs`, including Chinese design/API/runbook/spec documents and a Japanese design document. Its cases cover:
 
 - Chinese spaced keyword queries such as `登录流程 缓存超时 认证重试`.
 - Continuous Chinese natural-language phrasing such as `缓存超时影响登录流程的处理`, covered by the lightweight CJK n-gram preprocessing baseline.
@@ -63,6 +79,6 @@ For each question, compare agent behavior with and without MDGraph attached:
 - Whether the context returned by MDGraph is sufficient without follow-up file inspection.
 - Time and tool-call count for the full agent run.
 - `mdgraph eval` metrics: top-K document recall, expected-section recall, context precision, trace success, latency, returned character count, budget fit, fanout, context diversity, reason coverage, and ranking reason coverage.
-- `mdgraph eval` ranking report: query mode, RRF search fusion channels, MMR-style context packing strategy, optional reranker status, and semantic-active case count.
+- `mdgraph eval` ranking report: query mode, RRF search fusion channels, compatibility context packing strategy, optional reranker status, and semantic-active case count. Use the focused context regression suite to compare opt-in true MMR against that frozen default.
 
-Use `mdgraph report --benchmark benchmark-runs.json --json` for v0.6 A/B reporting on these questions. It consumes structured run records and reports aggregate deltas; full transcripts should remain outside public docs.
+Use `mdgraph report --benchmark benchmark-runs.json --json` for A/B reporting on these questions. It consumes structured run records and reports aggregate deltas; full transcripts should remain outside public docs.

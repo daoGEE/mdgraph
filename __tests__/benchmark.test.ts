@@ -14,7 +14,7 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("v0.6.3 benchmark report", () => {
+describe("benchmark report", () => {
   it("pairs with/without MDGraph records and calculates deltas", () => {
     const records = [
       runRecord({

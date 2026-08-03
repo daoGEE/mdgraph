@@ -22,7 +22,7 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("alpha evaluation corpus", () => {
+describe("retrieval evaluation corpus", () => {
   it("indexes realistic doc kinds and expected graph records", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-alpha-eval-"));
     tempDirs.push(root);

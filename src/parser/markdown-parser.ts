@@ -41,6 +41,7 @@ interface LineRange {
 
 export function parseMarkdownDocument(projectRoot: string, absolutePath: string): ParsedDocument {
   assertInsideRoot(projectRoot, absolutePath, "Markdown file path");
+  const updatedAt = fs.statSync(absolutePath).mtime.toISOString();
   const raw = fs.readFileSync(absolutePath, "utf8");
   const parsed = parseFrontmatter(raw);
   const body = parsed.content;
@@ -67,6 +68,7 @@ export function parseMarkdownDocument(projectRoot: string, absolutePath: string)
     relativePath,
     title,
     hash: contentHash(raw),
+    updatedAt,
     frontmatter,
     frontmatterDiagnostics,
     body,

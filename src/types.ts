@@ -25,9 +25,9 @@ export type EntityKind =
   | "concept"
   | "decision";
 
-// SAME_AS, RELATED_TO, and CONTRADICTS are reserved graph edge kinds for
-// deterministic aliasing, weak relation, and contradiction emitters that are
-// not currently produced by the MVP indexer.
+// SAME_AS and CONTRADICTS remain reserved for deterministic aliasing and
+// contradiction emitters. RELATED_TO is emitted only by the explicit,
+// provider-gated derived-relationship workflow.
 export type EdgeKind =
   | "CONTAINS"
   | "DEFINES"
@@ -42,7 +42,8 @@ export type EdgeKind =
   | "RELATED_TO"
   | "CONTRADICTS";
 
-export const RESERVED_EDGE_KINDS = ["SAME_AS", "RELATED_TO", "CONTRADICTS"] as const satisfies readonly EdgeKind[];
+export const RESERVED_EDGE_KINDS = ["SAME_AS", "CONTRADICTS"] as const satisfies readonly EdgeKind[];
+export const DERIVED_EDGE_KINDS = ["RELATED_TO"] as const satisfies readonly EdgeKind[];
 
 export type Provenance =
   | "frontmatter"
@@ -52,7 +53,8 @@ export type Provenance =
   | "heading"
   | "inline_code"
   | "code_block"
-  | "regex";
+  | "regex"
+  | "embedding_similarity";
 
 export interface MDGraphConfig {
   docs: {
@@ -79,6 +81,9 @@ export interface MDGraphConfig {
     provider: string;
     model: string;
     dimensions: number;
+    endpoint?: string;
+    timeoutMs?: number;
+    batchSize?: number;
   };
 }
 
@@ -153,6 +158,7 @@ export interface ParsedDocument {
   relativePath: string;
   title: string;
   hash: string;
+  updatedAt?: string;
   frontmatter: DocumentFrontmatter;
   frontmatterDiagnostics: FrontmatterDiagnostic[];
   body: string;
