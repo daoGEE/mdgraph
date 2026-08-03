@@ -102,7 +102,7 @@ describe("watcher health", () => {
     });
   });
 
-  it("ignores Unix sockets in excluded directories without disabling native watch", async () => {
+  it.skipIf(process.platform === "win32")("ignores Unix sockets in excluded directories without disabling native watch", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-watcher-socket-"));
     tempDirs.push(root);
     createFixtureDocs(root);
