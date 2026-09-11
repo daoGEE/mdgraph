@@ -16,190 +16,82 @@ source_refs:
   - src/bin/mdgraph.ts
   - src/wiki/wiki-plan.ts
   - src/wiki/wiki-status.ts
+  - src/wiki/wiki-evidence.ts
+  - src/wiki/wiki-dependencies.ts
+  - src/wiki/wiki-domains.ts
 ---
 
 # Knowledge Cards and Wiki Workflow
 
-## Decision
+Knowledge Cards help locate and interpret graph evidence. Wiki commands prepare and maintain a project manual whose prose is written by the host agent or user. Neither capability requires a model, embeddings, a source-code graph, or another database.
 
-MDGraph treats Knowledge Cards and Wiki authoring as separate capabilities.
+## Knowledge Cards
 
-- A **Knowledge Card** is a compact query-time projection over the current graph. It
-  enriches the existing `node` and `context` workflows first, without producing files,
-  adding MCP tools, or creating another knowledge store.
-- A **Wiki** is a user-facing project manual. MDGraph deterministically plans pages,
-  prepares evidence briefs, reports update impact, and verifies references. The host
-  agent reads project process documents and source code, then authors or updates the
-  delivery Markdown.
+`node` and MCP `mdgraph_node` expose an experimental `card`. `context` adds a complete `cardSummary` only when packed Markdown leaves enough space. Search ranking, trace paths, and the five-tool MCP surface are unchanged.
 
-MDGraph does not select or invoke a prose-generation model. Existing optional
-embeddings remain retrieval-only.
+A card retains `nodeId`, `kind`, `label`, `summary`, `definitions`, `sourceRefs`, `relatedDocuments`, `evidence`, and optional `truncated`. Additive `nextReads` entries supply graph-backed paths and reading reasons.
 
-## Non-goals
+References carry `association` (`direct`, `inherited`, or `related`), `originNodeId`, and optional `viaNodeId`. A section's own evidence is direct; document-level declarations are inherited background. A document may aggregate its sections while retaining the originating node. An entity's source files reached through a defining document are related evidence, not a claim that the entity directly implements all of those files.
 
-- No card CLI/MCP tool or persisted card table.
-- No static card repository or GraphJSON/edge dump presented as a Wiki.
-- No source-code graph inside MDGraph.
-- No built-in Ollama/generation provider or Wiki vector index.
-- No automatic overwrite of user-maintained Wiki prose.
-- No claim that agent-authored prose is byte-deterministic.
+The deterministic summary emphasizes location and useful relationships. Next reads come from existing graph facts. The default complete serialized JSON budget is 4,000 characters, including ownership metadata, next reads, and omission counts. Direct evidence has priority over inherited/related background. Display text can end in an ellipsis; the stable node identity is retained. An impossible budget produces an explicit error. Cards are generated at query time and are not persisted or exposed through a separate command.
 
-## Knowledge Card
-
-```ts
-interface KnowledgeCard {
-  nodeId: string;
-  kind: "document" | "section" | "entity" | "source_ref";
-  label: string;
-  summary: string;
-  definitions: CardReference[];
-  sourceRefs: CardSourceReference[];
-  relatedDocuments: CardReference[];
-  evidence: CardEvidence[];
-  truncated?: Record<string, number>;
-}
-```
-
-The summary is deterministic template text, not an LLM summary. Records retain graph
-IDs, project-relative paths, line ranges, edge kinds, provenance, and confidence when
-available.
-
-### Integration
-
-- `node`: add an experimental `card` field and render the full compact card in text mode.
-- `context`: add only bounded `cardSummary` data for selected items and count it in
-  `usedChars`; omit summaries that do not fit, preserving source content and recovery fields.
-- `search`: keep ranking and JSON shape unchanged in the first batch.
-- `trace`: keep path semantics unchanged in the first batch.
-- MCP remains exactly five tools.
-
-Suggested defaults are eight definitions, eight source refs, eight related documents,
-twelve evidence records, and 4,000 characters per card. Truncation reports omitted
-counts. The initial implementation uses the existing graph only.
-
-## Wiki Workflow
-
-```text
-documentation graph + task + known source paths
-    -> WikiPlan
-    -> WikiPageBrief
-    -> host agent reads documentation and source
-    -> host agent authors/updates Markdown
-    -> WikiStatus + WikiVerification
-```
-
-Commands:
+## Create a Wiki plan
 
 ```bash
-mdgraph wiki plan --out .mdgraph/wiki-plan.json --path <project>
+mdgraph wiki plan --wiki-dir wiki --out .mdgraph/wiki-plan.json --path <project>
 mdgraph wiki brief <page-id> --plan .mdgraph/wiki-plan.json --json --path <project>
-mdgraph wiki status <wiki-dir> --plan .mdgraph/wiki-plan.json --json --path <project>
-mdgraph wiki verify <wiki-dir> --plan .mdgraph/wiki-plan.json --json --path <project>
 ```
 
-There is no `wiki generate` command.
+Plan v2 records the project-relative Wiki output directory and excludes it from source selection. Project-neutral candidate domains cover overview, architecture, usage, development, operations, and reference; indexed document evidence supplies project vocabulary. Sparse documentation produces limited suggestions and explicit gaps rather than invented project behavior.
 
-### WikiPlan
+Pages retain stable IDs, output paths, purpose, audience, outline, selected document IDs, selected source paths, evidence queries, and a dependency-local evidence hash. Dependency snapshots let maintenance reports identify changed files. Global graph hashes remain diagnostic data; changes to indexing metadata alone do not imply that every page needs rewriting.
 
-```ts
-interface WikiPlan {
-  format: "mdgraph-wiki-plan";
-  formatVersion: 1;
-  graphHash: string;
-  sourceHash: string;
-  pages: Array<{
-    id: string;
-    title: string;
-    path: string;
-    parentId?: string;
-    purpose: string;
-    audience: string;
-    outline: string[];
-    documentIds: string[];
-    sourceRefs: string[];
-    evidenceQueries: string[];
-    evidenceHash: string;
-  }>;
-}
+## Update an authored plan
+
+```bash
+mdgraph wiki plan --from .mdgraph/wiki-plan.json --out .mdgraph/wiki-plan.next.json --path <project>
 ```
 
-Planning uses document types, headings, front matter, explicit links, entities, and
-source refs. It creates only evidence-backed pages; candidate domains include overview,
-architecture, core workflows, development, operations, and reference.
+Review the next plan before replacing the previous one. Existing page IDs, paths, hierarchy, titles, purposes, audiences, outlines, selected documents, source refs, and evidence queries are preserved. New pages and sources are suggestions rather than automatic edits. Missing selected dependencies remain visible instead of silently disappearing. Adopt suggestions by editing the selected page fields and refreshing the plan before writing from its brief.
 
-### WikiPageBrief
+Version 1 plans remain readable. When migrating with `--from`, supply `--wiki-dir wiki` explicitly; write the resulting version 2 plan to a new file. Future unknown formats are diagnosed without overwriting the input. Plan, brief, status, and verification never author or overwrite page prose.
 
-A brief contains the page goal/audience/outline, authoritative `sourceDocuments`,
-bounded existing context items, Knowledge Cards, source paths needing code inspection,
-writing requirements, and suggested next queries. It reuses current context budgets
-and recovery fields. Both plan and brief add `strictFreshness` with the strict
-Markdown content-hash diagnosis available at creation time; when it is stale or
-unknown, index before treating the evidence as current.
+## Author one page
 
-### Delivery front matter
+A brief identifies primary selected documents, supplementary retrieved material, source files to inspect, and unresolved evidence gaps. Knowledge Cards distinguish direct facts from background. The `maxChars`/`usedChars` budget covers packed context text and serialized cards; page instructions and the source manifest are separate recovery information, not a total JSON-size cap.
+
+The shared evidence evaluation supplies freshness and recovery information to JSON, text, and writing requirements. A stale or unknown brief remains readable, but it does not instruct the author to finalize an old evidence hash. Refresh sources/index/plan as directed, inspect the cited files, then write or update the page.
+
+Maintain these fields:
 
 ```yaml
 ---
-wiki_id: architecture-overview
-evidence_hash: "..."
+wiki_id: architecture
+evidence_hash: "<hash from the current brief>"
 source_docs:
-  - docs/EN/Architecture.md
+  - docs/architecture.md
 source_refs:
-  - src/indexer.ts
-  - src/db/repositories.ts
+  - src/main.ts
 ---
 ```
 
-`source_docs` and `source_refs` must be arrays of non-empty project-relative paths.
-Scalar values, empty entries, and mixed arrays are invalid evidence and `wiki verify`
-reports an exact recovery action. User prose remains editable and is never overwritten
-by status or verification.
+Both source fields must be arrays of non-empty project-relative paths; use `[]` for an empty list. Additional user-selected sources must be deliberately incorporated into the plan. A mismatch should be resolved by reviewing source selection, not by blindly removing the user's references.
 
-### Status and verification
+Use [the authoring workflow](../../agent-pack/skills/wiki-authoring/SKILL.md) to preserve correct existing prose and update only affected pages.
 
-Page states are `current`, `needs_update`, `missing`, and `orphaned`. Status compares
-the plan evidence hash with page front matter and runs a strict content-hash check of
-indexed Markdown. A source document changed or deleted on disk marks only pages that
-use it as `needs_update`, even when its mtime was preserved. A newly added document
-makes the plan stale and tells the maintainer to index and regenerate it; it does not
-mark unrelated pages as needing an update.
+## Status, verification, and content acceptance
 
-Verification checks plan format/version, page identity, indexed source documents,
-safe project-relative source refs, internal Markdown links, strict evidence freshness,
-and missing/orphaned pages. An unknown or stale strict index is invalid until the
-project is indexed again. It does not judge prose quality or require model review.
+```bash
+mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path <project>
+mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path <project>
+```
 
-## Implementation batches
+`current` means no change was detected in the recorded dependencies and maintenance fields. `needs_update`, `missing`, and `orphaned` identify work to review. Reports include dependency changes and recovery actions. A new unrelated source can require plan review without forcing unrelated pages to be rewritten. Status and verification preserve user content.
 
-1. **Remove the wrong public direction:** do not merge experimental static Wiki/Card
-   export work; preserve existing GraphJSON/docs-site/source-bridge behavior.
-2. **Dynamic Card:** implement `src/query/knowledge-card.ts`, then integrate `node` and
-   `context` with strict budgets and provenance tests.
-3. **Plan and Brief:** add deterministic WikiPlan v1 and context-backed WikiPageBrief.
-4. **Status and Verify:** add evidence hashes, missing/orphaned detection, source/link
-   checks, and executable recovery guidance.
-5. **Agent workflow and real validation:** add a reusable authoring prompt/skill and use
-   MDGraph itself to produce a real user manual.
+Verification checks maintenance fields, safe existing sources, relative links, and evidence consistency. `valid: true` is not a judgment of prose accuracy. Content acceptance separately records the task performed, actual commands, observed results, the source revision, and any unverified claims.
 
-## Acceptance
+## Validation
 
-Knowledge Cards must improve node orientation without changing search ranking, trace
-paths, SQLite counts, or context budgets. They remain byte-stable for the same graph.
+Focused regression tests cover ownership, budgets, stale evidence, preserved author choices, plan compatibility, and the complete update workflow. `npm run baseline:knowledge-wiki` measures output behavior on a small orchard project; it is not an independent-agent A/B trial or evidence of improved prose quality. `npm run baseline:performance` measures synthetic 100/500-document workloads.
 
-Wiki plan/brief/status/verify must work without models, embeddings, or a Source Bridge.
-The same graph produces stable plans and briefs; changing one dependency marks only
-affected pages; user prose is never overwritten; every failure includes a recovery
-action.
-
-User validation covers understanding the product, installation/indexing, agent setup,
-the five tools, and operational recovery. Agent A/B compares first-correct-file hit,
-context size, correctness, and completion time. No measured gain means no broader card
-or Wiki automation.
-
-## Implementation status
-
-The Dynamic Card, Plan/Brief, Status/Verify, CLI, and host-agent authoring workflow are
-implemented. `node` exposes full Cards, `context` uses only spare budget for Card
-summaries, and `wiki plan/brief/status/verify` remains an experimental CLI-only group.
-The repository-owned `wiki/` manual and `agent-pack/skills/wiki-authoring` exercise the
-real workflow without adding a model provider or changing the five-tool MCP surface.
+The maintained project Wiki in `wiki/` and its `wiki/acceptance.md` record document real workflow validation. Their acceptance is separate from unit-test success.

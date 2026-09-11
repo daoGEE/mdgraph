@@ -332,3 +332,11 @@ Diff 只比较 Markdown 图记录、source refs 和 doctor warning codes。它�
 ## 评估证据补充字段
 
 评估 case 新增 `retrievalEvidencePassed`；`metrics` 新增 `retrievedEntityRecall`、`retrievedSourceRefRecall`、`retrievedEdgeKindCoverage`、`contextIrrelevantRatio`；`observed` 增加对应的实际返回实体、来源与关系类型数组。这些字段统计本次查询暴露的证据，旧覆盖指标及 `passed` 保持原有含义。详见[评估问题](Evaluation_Questions.md)。
+
+## Knowledge Card 归属与 Wiki 维护
+
+Card 引用新增可选的 `association`（`direct | inherited | related`）、`originNodeId` 和 `viaNodeId`。`nextReads` 为可选字段，包含实际路径、节点身份、阅读理由及归属。这些信息都计入默认 4,000 字符的完整 Card JSON 预算。
+
+新 Wiki 计划使用 formatVersion 2，记录 `wikiDir`、依赖快照、页面与来源建议、证据缺口。v1 继续可读；通过 `wiki plan --from` 升级时，需要明确 `--wiki-dir`，并写到另一个 `--out` 文件。页面建议包含完整页面记录；来源建议包含 `pageId`、`documentIds` 和 `sourceRefs`。
+
+Brief、Status、Verification 继续使用 formatVersion 1，通过新增字段扩展。Brief 增加 `supplementaryDocuments`、`sourceInspections`、`evidenceGaps` 和 `dependencyEvidence`。Status 页面增加 `changes`、`selectionChanges` 和 `evidenceState`。Verify 增加 `scope: "maintenance-and-evidence"` 与 `contentReview: "not-evaluated"`；`valid` 不代表正文正确性已获认证。

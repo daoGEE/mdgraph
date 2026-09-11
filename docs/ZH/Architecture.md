@@ -149,3 +149,7 @@ MCP 服务器有意仅暴露五个工具。Search/context 通过 provider-aware 
 - 互操作 adapter 是只读导向的。GraphJSON verify、Mermaid/Markdown/docs-site export 和 source bridge report 不会把外部 graph 合并进主 SQLite index。
 - `RELATED_TO` 是实验性派生 edge，只能由显式、provider-gated 的流程发射，普通确定性 indexing 永远不会发射它。`SAME_AS` 和 `CONTRADICTS` 继续保留；类似矛盾的信号仍由 `doctor` 报告，而不是作为 graph edge 插入。
 - 当前实现优先考虑紧凑、确定性的核心，而非广泛的 Markdown/MDX 方言支持。
+
+## Knowledge 与 Wiki 的证据归属
+
+Card 将直接边、文档或章节的继承背景、关联源码依据分开表达，引用和阅读建议保留稳定来源信息。`src/wiki/wiki-evidence.ts` 负责 Wiki 证据哈希与严格内容检查，`src/wiki/wiki-dependencies.ts` 的依赖评估同时驱动 Brief 写作指引和页面状态。Plan v2 保留人工选择，将新建议单独列出；文档来源哈希排除 Wiki 输出及变化的索引时间。数据库结构和检索排名保持不变。

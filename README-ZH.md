@@ -156,6 +156,8 @@ mdgraph usage --path /your/project
 
 实验性的 `wiki` group 会确定性规划页面、准备有界证据 brief、报告更新影响，并验证维护字段、source 和相对链接。MDGraph 不生成或覆盖 Wiki 正文；宿主 Agent 工作流见 [Knowledge Card 与 Wiki 工作流](./docs/ZH/Knowledge_Cards_and_Wiki_Workflow.md)。
 
+更新已有 Wiki 计划时，使用 `mdgraph wiki plan --from <plan> --out <next-plan> --path <project>` 保留人工调整的页面。迁移 v1 计划时增加 `--wiki-dir wiki`。新计划使用 v2，新增页面和来源需审视后采纳。`current` 表示依赖一致，`wiki verify` 不判断正文是否正确。
+
 ---
 
 ## 可选 Ollama Embedding

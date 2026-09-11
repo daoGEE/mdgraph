@@ -2,6 +2,13 @@
 
 All notable changes to MDGraph are documented here. MDGraph follows semantic versioning for its public releases.
 
+## Knowledge and Wiki maintenance improvements
+
+- Knowledge Cards distinguish direct, inherited, and related evidence, preserve source ownership, and provide bounded next-read paths.
+- WikiPlan v2 preserves authored page selections during updates, records the output directory and dependency snapshots, and separates suggested pages/sources from selected evidence. Version 1 plans remain readable.
+- Wiki briefs and status share dependency assessment, explain unavailable or changed sources, and preserve user-selected references during review. Verification explicitly reports that prose correctness is not evaluated.
+- Added CLI/MCP compatibility and full maintenance-flow regression tests, packaged workflow checks, and a reproducible orchard output baseline.
+
 ## Unreleased
 
 ### Added

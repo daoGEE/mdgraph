@@ -90,3 +90,7 @@ A/B 报告入口是 `mdgraph report --benchmark benchmark-runs.json --json`。�
 ## 可重复的性能样本
 
 安装依赖后运行 `npm run baseline:performance -- 100,500`。脚本生成独立的合成文档集，索引 local-hash 向量、修改一个文档，测量全量/增量索引以及卡片、context、语义查询耗时。查询先预热一次，再报告五次采样的中位数。内存是操作后的进程 heap/RSS，不是峰值分配。JSON 包含运行时、平台、文档规模、记录计数和保留的样本路径。这些结果用于工程比较，不代表真实代理效果或生产大规模性能。
+
+## Knowledge／Wiki 输出基线
+
+运行 `npm run baseline:knowledge-wiki`，在固定的果园调度项目上测量 Card JSON 字符数、缺少归属标签的引用数量，以及已知文件在阅读建议中的位置。位置为 null 表示没有匹配的阅读建议，不表示搜索失败。Plan／Brief 输出用于检查项目通用规划和材料定位。这是输出行为比较，不是独立 Agent 的完成耗时或正文质量提升实验。

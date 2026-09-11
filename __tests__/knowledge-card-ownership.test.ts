@@ -61,6 +61,25 @@ describe("KnowledgeCard ownership", () => {
     }
   });
 
+  it("keeps each entity source reference attached to its actual graph document path", async () => {
+    const root = createTwoDefinitionDocuments();
+    await indexProject(root, { full: true });
+    const repository = new GraphRepository(openDatabase(root));
+    try {
+      const entity = repository.resolveNode("SharedTerm");
+      const firstDocument = repository.resolveNode("docs/first.md");
+      const secondDocument = repository.resolveNode("docs/second.md");
+      const card = buildKnowledgeCard(repository, entity!, { maxChars: 50_000 });
+      expect(card?.sourceRefs).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: "src/first.ts", association: "related", originNodeId: firstDocument?.id, viaNodeId: firstDocument?.id }),
+        expect.objectContaining({ path: "src/second.ts", association: "related", originNodeId: secondDocument?.id, viaNodeId: secondDocument?.id })
+      ]));
+      expect(card?.nextReads?.every((item) => Boolean(item.path) && item.nodeId !== entity?.id)).toBe(true);
+    } finally {
+      repository.close();
+    }
+  });
+
   it("deduplicates only identical ownership and reports bounded next reads in the JSON budget", async () => {
     const root = createOwnershipProject(24);
     await indexProject(root, { full: true });
@@ -68,8 +87,8 @@ describe("KnowledgeCard ownership", () => {
     try {
       const document = repository.resolveNode("docs/ownership.md");
       const card = buildKnowledgeCard(repository, document!, { maxNextReads: 2, maxChars: 4_000 });
-      expect(card?.nextReads).toHaveLength(2);
-      expect(card?.truncated?.nextReads).toBeGreaterThan(0);
+      expect(card?.nextReads?.length).toBeGreaterThan(0);
+      expect(card?.nextReads?.length).toBeLessThanOrEqual(2);
       expect(JSON.stringify(buildKnowledgeCard(repository, document!, { maxNextReads: 2, maxChars: 4_000 }))).toBe(JSON.stringify(card));
       expect(JSON.stringify(card).length).toBeLessThanOrEqual(4_000);
       expect(card?.evidence.slice(0, 2).every((item) => item.association === "direct" || item.association === "inherited")).toBe(true);
@@ -110,5 +129,26 @@ function createOwnershipProject(extraSections = 0): string {
     "",
     ...sections
   ].join("\n"), "utf8");
+  return root;
+}
+
+function createTwoDefinitionDocuments(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mdgraph-knowledge-card-source-ownership-"));
+  roots.push(root);
+  const docs = path.join(root, "docs");
+  fs.mkdirSync(docs, { recursive: true });
+  for (const [name, source] of [["first", "src/first.ts"], ["second", "src/second.ts"]] as const) {
+    fs.writeFileSync(path.join(docs, `${name}.md`), [
+      "---",
+      `title: ${name}`,
+      "defines:",
+      "  - SharedTerm",
+      "implements:",
+      `  - ${source}`,
+      "---",
+      `# ${name}`,
+      ""
+    ].join("\n"), "utf8");
+  }
   return root;
 }

@@ -156,6 +156,8 @@ The experimental `relationships derive` command creates low-weight `RELATED_TO` 
 
 The experimental `wiki` group deterministically plans pages, prepares bounded evidence briefs, reports update impact, and verifies maintenance fields, sources, and relative links. MDGraph does not generate or overwrite Wiki prose; use the host-agent workflow in [Knowledge Cards and Wiki Workflow](./docs/EN/Knowledge_Cards_and_Wiki_Workflow.md).
 
+To preserve a Wiki plan's authored pages while refreshing its evidence, use `mdgraph wiki plan --from <plan> --out <next-plan> --path <project>`. Add `--wiki-dir wiki` when migrating a v1 plan. New plans use v2; review suggestions before adopting them. `current` describes dependency consistency, and `wiki verify` does not evaluate prose correctness.
+
 ---
 
 ## Optional Ollama Embeddings

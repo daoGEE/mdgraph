@@ -165,3 +165,7 @@ The MCP server intentionally exposes only five tools. Search and context dispatc
 - Interoperability adapters are read-oriented. GraphJSON verify, Mermaid/Markdown/docs-site exports, and source bridge reports do not merge external graphs into the main SQLite index.
 - `RELATED_TO` is an experimental derived edge emitted only by explicit provider-gated execution; it is never emitted by ordinary deterministic indexing. `SAME_AS` and `CONTRADICTS` remain reserved, and contradiction-like signals continue to be reported by `doctor` rather than inserted as graph edges.
 - The current implementation favors a compact, deterministic core over broad Markdown/MDX dialect support.
+
+## Knowledge and Wiki evidence ownership
+
+Card assembly distinguishes direct edges, inherited document/section context, and related source evidence. Stable provenance travels with references and bounded next-read entries. Wiki evidence hashing and strict content checks are shared in `src/wiki/wiki-evidence.ts`; dependency assessment in `src/wiki/wiki-dependencies.ts` supplies both brief guidance and page status. Plan v2 preserves authored selections and separates new suggestions. Its document source hash excludes Wiki output and volatile indexing metadata. SQLite schema and retrieval ranking are unchanged.

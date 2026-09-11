@@ -684,11 +684,24 @@ function associationForSourceRef(
   const document = [edge.fromId, edge.toId]
     .map((id) => nodes.get(id))
     .find((candidate): candidate is NodeRecord => candidate?.kind === "document");
-  const definition = directEdges.find((candidate) => candidate.kind === "DEFINES" && candidate.toId === cardNode.id);
+  const entityLink = document
+    ? directEdges.find((candidate) => {
+      if (candidate.fromId === cardNode.id) {
+        return owningDocumentId(nodes.get(candidate.toId)) === document.id;
+      }
+      if (candidate.toId === cardNode.id) {
+        return owningDocumentId(nodes.get(candidate.fromId)) === document.id;
+      }
+      return false;
+    })
+    : undefined;
+  const viaNodeId = entityLink
+    ? entityLink.fromId === cardNode.id ? entityLink.toId : entityLink.fromId
+    : undefined;
   return {
     association: "related",
     originNodeId: document?.id ?? edge.fromId,
-    viaNodeId: definition?.fromId ?? document?.id
+    ...(viaNodeId ? { viaNodeId } : {})
   };
 }
 
@@ -701,15 +714,15 @@ function nextReadsForFacts(
   nodes: Map<string, NodeRecord>
 ): CardNextRead[] {
   const nextReads: CardNextRead[] = [];
-  for (const definition of definitions.filter((fact) => fact.nodeId !== node.id)) {
+  for (const definition of definitions.filter((fact) => fact.nodeId !== node.id && Boolean(fact.path))) {
     nextReads.push({ ...definition, reason: "Read the definition location recorded by the graph." });
   }
-  for (const related of relatedDocuments.filter((fact) => fact.nodeId !== node.id)) {
+  for (const related of relatedDocuments.filter((fact) => fact.nodeId !== node.id && Boolean(fact.path))) {
     nextReads.push({ ...related, reason: "Read the graph-linked document for relationship context." });
   }
   for (const source of sourceRefs) {
     const sourceNode = nodes.get(source.nodeId);
-    if (sourceNode?.kind === "source_ref") {
+    if (sourceNode?.kind === "source_ref" && sourceNode.id !== node.id) {
       nextReads.push({
         ...referenceForNode(sourceNode, undefined, nodes, source),
         reason: source.association === "direct"
@@ -721,11 +734,14 @@ function nextReadsForFacts(
   for (const item of evidence.filter((fact) => fact.association === "direct")) {
     const candidateId = item.fromId === node.id ? item.toId : item.fromId;
     const candidate = nodes.get(candidateId);
-    if (candidate && candidate.kind !== "chunk") {
-      nextReads.push({
-        ...referenceForNode(candidate, undefined, nodes, item),
-        reason: `Follow the direct ${item.edgeKind}/${item.provenance} graph edge.`
-      });
+    if (candidate && candidate.kind !== "chunk" && candidate.id !== node.id) {
+      const reference = referenceForNode(candidate, undefined, nodes, item);
+      if (reference.path) {
+        nextReads.push({
+          ...reference,
+          reason: `Follow the direct ${item.edgeKind}/${item.provenance} graph edge.`
+        });
+      }
     }
   }
   return dedupeNextReads(nextReads).sort(compareNextReads);
@@ -733,7 +749,7 @@ function nextReadsForFacts(
 
 function dedupeNextReads(reads: CardNextRead[]): CardNextRead[] {
   const deduped = new Map<string, CardNextRead>();
-  for (const read of reads) {
+  for (const read of reads.filter((candidate) => Boolean(candidate.path))) {
     const key = `${read.nodeId}:${read.association ?? ""}:${read.originNodeId ?? ""}:${read.viaNodeId ?? ""}`;
     if (!deduped.has(key)) {
       deduped.set(key, read);

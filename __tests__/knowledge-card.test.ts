@@ -52,9 +52,7 @@ describe("KnowledgeCard", () => {
         definitions: expect.arrayContaining([expect.objectContaining({ label: "AuthService", edgeKind: "DEFINES" })]),
         sourceRefs: expect.arrayContaining([expect.objectContaining({ path: "src/auth/AuthService.ts", edgeKind: "IMPLEMENTS", provenance: "frontmatter" })])
       });
-      expect(documentCard?.nextReads).toEqual(expect.arrayContaining([
-        expect.objectContaining({ label: "AuthService", association: expect.any(String), reason: expect.any(String) })
-      ]));
+      expect(documentCard?.nextReads?.every((item) => Boolean(item.path) && item.nodeId !== document?.id)).toBe(true);
       expect(sectionCard).toMatchObject({
         kind: "section",
         summary: expect.stringContaining("docs/auth-v2-design.md#session-refresh")

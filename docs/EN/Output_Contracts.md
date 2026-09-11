@@ -337,3 +337,11 @@ Initial warning codes cover the existing doctor checks, front matter diagnostics
 ## Evaluation evidence additions
 
 Evaluation cases add `retrievalEvidencePassed`; `metrics` add `retrievedEntityRecall`, `retrievedSourceRefRecall`, `retrievedEdgeKindCoverage`, and `contextIrrelevantRatio`. `observed` adds the corresponding returned-entity, returned-source-ref, and returned-edge-kind arrays. These report this query's exposed evidence. Legacy coverage metrics and `passed` retain their existing meaning. See [Evaluation Questions](Evaluation_Questions.md).
+
+## Knowledge Card ownership and Wiki maintenance
+
+Card references add optional `association` (`direct | inherited | related`), `originNodeId`, and `viaNodeId`. Optional `nextReads` contains paths, graph identity, reading reasons, and ownership. These fields count toward the full 4,000-character default Card JSON budget.
+
+New Wiki plans use formatVersion 2 and record `wikiDir`, dependency snapshots, source/page suggestions, and evidence gaps. Version 1 plans remain readable; upgrading through `wiki plan --from` requires `--wiki-dir` and a separate `--out` file. Page suggestions are complete page records; source suggestions contain `pageId`, `documentIds`, and `sourceRefs`.
+
+Brief, status, and verification retain formatVersion 1 with additive fields. Brief adds `supplementaryDocuments`, `sourceInspections`, `evidenceGaps`, and `dependencyEvidence`. Status pages add `changes`, `selectionChanges`, and `evidenceState`. Verify adds `scope: "maintenance-and-evidence"` and `contentReview: "not-evaluated"`; `valid` does not certify prose accuracy.

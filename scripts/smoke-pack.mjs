@@ -86,6 +86,14 @@ try {
   if (!plan.pages.length || plan.strictFreshness.state !== "fresh") throw new Error("Packed Wiki planning did not return current evidence.");
   const brief = JSON.parse(run(process.execPath, [installedCliPath, "wiki", "brief", plan.pages[0].id, "--path", project, "--plan", "plan.json", "--json"], { cwd: installDir }).stdout);
   if (brief.usedChars > brief.maxChars) throw new Error("Packed Wiki brief exceeded its budget.");
+  const refreshed = JSON.parse(run(process.execPath, [installedCliPath, "wiki", "plan", "--from", "plan.json", "--out", "next-plan.json", "--path", project, "--json"], { cwd: installDir }).stdout).plan;
+  if (refreshed.formatVersion !== 2 || refreshed.wikiDir !== "wiki") throw new Error("Packed plan update lost the v2 contract.");
+  fs.mkdirSync(path.join(project, "wiki"));
+  for (const page of refreshed.pages) {
+    fs.writeFileSync(path.join(project, "wiki", page.path), `---\nwiki_id: ${page.id}\nevidence_hash: ${page.evidenceHash}\nsource_docs: [README.md]\nsource_refs: []\n---\n# ${page.title}\n\nPackaged workflow fixture.\n`);
+  }
+  const verified = JSON.parse(run(process.execPath, [installedCliPath, "wiki", "verify", "wiki", "--plan", "next-plan.json", "--path", project, "--json"], { cwd: installDir }).stdout);
+  if (!verified.valid || verified.contentReview !== "not-evaluated") throw new Error("Packed Wiki maintenance verification failed.");
   assertNoInternalDocs(packedFiles);
 } finally {
   for (const root of tempRoots) {
