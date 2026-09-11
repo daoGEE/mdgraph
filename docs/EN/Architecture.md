@@ -3,6 +3,8 @@ implements:
   - src/indexer.ts
   - src/db/repositories.ts
   - src/query/context-builder.ts
+  - src/wiki/wiki-plan.ts
+  - src/wiki/wiki-status.ts
 source_refs:
   - src/db/schema.sql
   - src/types.ts
@@ -27,6 +29,7 @@ MDGraph uses this implemented pipeline: scanner -> parser -> extractor/resolver 
 | Resolution | `src/resolution/link-resolver.ts` | Resolves Markdown and WikiLink targets to indexed documents or sections. |
 | Storage | `src/db/*` | SQLite connection, schema, record replacement, incremental updates, graph queries, and storage diagnostics. |
 | Query | `src/query/*` | Search ranking, context packing, graph trace, and the experimental structured-query tokenizer/AST/executor. |
+| Wiki | `src/wiki/*` | Experimental deterministic Wiki planning, evidence briefs, impact status, and read-only verification; prose remains host-agent/user maintained. |
 | Evaluation | `src/evaluation/*` | Retrieval evaluation cases, expected records, and lightweight metrics for search/context/trace quality. |
 | Benchmark | `src/benchmark/*` | Structured with/without-MDGraph agent run record parsing and paired delta aggregation. |
 | Bundle | `src/bundle/*` | Private directory graph bundle creation and verification using schema/source/config/document hashes. |
@@ -138,6 +141,12 @@ The experimental structured-query path is separate from natural-language search.
 `evaluateRetrieval` and `evaluateRetrievalAsync` run the repository-owned alpha or CJK evaluation cases against an indexed project. They reuse the corresponding search/context path plus `traceNodes`, then report expected-document recall, expected-section recall, context precision, trace success, latency, returned character budget, context diversity, reason coverage, RRF channels, query mode, optional semantic reranker status, and async provider diagnostics. The evaluation output is a measurement aid, not a learned ranking model and not a replacement for focused regression tests.
 
 `generateBenchmarkReport` consumes structured `AgentRunRecord` JSON only. It pairs one `with_mdgraph` and one `without_mdgraph` record by `questionId`, reports incomplete or duplicate pairs as skipped, and calculates deltas for file reads, searches, tool calls, MDGraph calls, character/token budgets, latency, raw-file fallback, and citation correctness. It does not parse transcripts, invoke models, or host agent runs.
+
+## Wiki Workflow
+
+The experimental Wiki path is separate from indexing and natural-language query ranking. `buildWikiPlan` classifies only evidence-backed domains from indexed document metadata and explicit graph relationships, records graph/source hashes, and gives every page a dependency-local `evidenceHash` that also fingerprints safe project source refs. `buildWikiPageBrief` reuses context packing, known files, Knowledge Cards, and a shared character budget.
+
+`buildWikiStatus` compares user-maintained page front matter with the plan and current dependency evidence, reporting `current`, `needs_update`, `missing`, or `orphaned` without modifying files. `verifyWiki` adds bounded checks for plan shape, indexed source documents, safe existing source refs, evidence freshness, and resolvable relative Markdown links. It does not evaluate prose quality, delete orphaned pages, invoke a model, or add an MCP tool.
 
 ## MCP Boundary
 

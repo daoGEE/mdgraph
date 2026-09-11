@@ -136,6 +136,12 @@ mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY update
 mdgraph relationships derive --dry-run --json --path /your/project
 mdgraph relationships derive --threshold 0.86 --json --path /your/project
 
+# 实验性的用户维护 Wiki 工作流
+mdgraph wiki plan --out .mdgraph/wiki-plan.json --path /your/project
+mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+
 # Agent 友好的使用指引
 mdgraph usage --path /your/project
 ```
@@ -147,6 +153,8 @@ mdgraph usage --path /your/project
 实验性的 `query` 命令提供有界、参数化的文档治理 DSL，不改变 `search` 或五工具 MCP surface。
 
 实验性的 `relationships derive` 只会基于 fresh、完整的 semantic-model index，在独立 evidence 与 reciprocal-neighbor 门禁通过后创建低权重 `RELATED_TO` edge；它不会在 indexing 或 watch mode 中自动运行。两个实验性工作流均记录在[结构化查询与派生关系](./docs/ZH/Structured_Query_and_Relationships.md)。
+
+实验性的 `wiki` group 会确定性规划页面、准备有界证据 brief、报告更新影响，并验证维护字段、source 和相对链接。MDGraph 不生成或覆盖 Wiki 正文；宿主 Agent 工作流见 [Knowledge Card 与 Wiki 工作流](./docs/ZH/Knowledge_Cards_and_Wiki_Workflow.md)。
 
 ---
 

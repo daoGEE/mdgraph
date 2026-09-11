@@ -36,6 +36,20 @@ import { semanticStatusReportAsync, type SemanticStatusReport } from "../semanti
 import type { SearchQueryMode } from "../types.js";
 import { packageVersion } from "../version.js";
 import { watchProject } from "../watcher/file-watcher.js";
+import {
+  buildWikiPageBrief,
+  buildWikiPlan,
+  formatWikiPageBrief,
+  formatWikiPlan,
+  readWikiPlan,
+  writeWikiPlan
+} from "../wiki/wiki-plan.js";
+import {
+  buildWikiStatus,
+  formatWikiStatus,
+  formatWikiVerification,
+  verifyWiki
+} from "../wiki/wiki-status.js";
 
 const program = new Command();
 
@@ -310,6 +324,94 @@ relationshipsCommand
         dryRun: options.dryRun
       });
       printResult(options.json, report, formatDerivedRelationships(report));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+const wikiCommand = program
+  .command("wiki")
+  .description("Plan, brief, inspect, and verify a user-maintained project Wiki");
+
+wikiCommand
+  .command("plan")
+  .description("Create a deterministic WikiPlan without generating page prose")
+  .requiredOption("--out <file>", "WikiPlan JSON output path")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((options: { out: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const repository = openRepository(projectRoot);
+    try {
+      const plan = buildWikiPlan(projectRoot, repository);
+      const out = resolveProjectArtifactPath(projectRoot, options.out);
+      writeWikiPlan(out, plan);
+      printResult(options.json, { out, plan }, [`Wrote Wiki plan: ${out}`, formatWikiPlan(plan)].join("\n"));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("brief")
+  .description("Build an evidence-bounded brief for one planned Wiki page")
+  .argument("<page-id>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--max-chars <number>", "Maximum context and Knowledge Card characters", parseInteger)
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((pageId: string, options: { plan: string; json?: boolean; maxChars?: number; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const config = loadConfig(projectRoot);
+    const repository = openRepository(projectRoot);
+    try {
+      const brief = buildWikiPageBrief(projectRoot, repository, config, plan, pageId, { maxChars: options.maxChars });
+      printResult(options.json, brief, formatWikiPageBrief(brief));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("status")
+  .description("Report current, needs-update, missing, and orphaned Wiki pages without modifying them")
+  .argument("<wiki-dir>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((wikiDir: string, options: { plan: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const repository = openRepository(projectRoot);
+    try {
+      const status = buildWikiStatus(projectRoot, repository, resolveProjectArtifactPath(projectRoot, wikiDir), plan, { planPath });
+      printResult(options.json, status, formatWikiStatus(status));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("verify")
+  .description("Verify Wiki plan, maintenance fields, source paths, evidence freshness, and relative links")
+  .argument("<wiki-dir>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((wikiDir: string, options: { plan: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const repository = openRepository(projectRoot);
+    try {
+      const verification = verifyWiki(projectRoot, repository, resolveProjectArtifactPath(projectRoot, wikiDir), plan, { planPath });
+      printResult(options.json, verification, formatWikiVerification(verification));
+      if (!verification.valid) {
+        process.exitCode = 1;
+      }
     } finally {
       closeRepository(repository);
     }
@@ -682,6 +784,17 @@ function buildUsageGuide(projectRoot: string): UsageGuide {
         ]
       },
       {
+        name: "Wiki Maintenance",
+        purpose: "Plan and maintain a user-authored project Wiki from deterministic evidence without generating prose inside MDGraph.",
+        commands: [
+          `mdgraph wiki plan --out .mdgraph/wiki-plan.json --path ${project}`,
+          `mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path ${project}`,
+          `mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path ${project}`,
+          `mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path ${project}`
+        ],
+        notes: ["Status and verify are read-only; the host agent writes pages and preserves user-authored prose."]
+      },
+      {
         name: "CI And Artifacts",
         purpose: "Produce reproducible graph reports and interoperability artifacts.",
         commands: [
@@ -737,6 +850,10 @@ function shellPath(value: string): string {
 
 function projectRootFromOption(projectRoot: string | undefined): string {
   return validateProjectRoot(projectRoot ?? process.cwd());
+}
+
+function resolveProjectArtifactPath(projectRoot: string, artifactPath: string): string {
+  return path.isAbsolute(artifactPath) ? path.resolve(artifactPath) : path.resolve(projectRoot, artifactPath);
 }
 
 function formatIndexResult(result: IndexResult): string {

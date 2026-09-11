@@ -10,6 +10,7 @@ MDGraph documentation is organized by user task. Start with the repository [READ
 - [Retrieval and Context](Retrieval_and_Context.md) — understand search channels, optional semantic providers, entity extraction, CJK handling, and context packing.
 - [Structured Query and Relationships](Structured_Query_and_Relationships.md) — run governance queries and explicitly derive non-authoritative related-document edges.
 - [Operations](Operations.md) — keep indexes fresh, interpret watcher health, use polling safely, and recover from provider or file-watcher failures.
+- [Knowledge Cards and Wiki Workflow](Knowledge_Cards_and_Wiki_Workflow.md) — plan and maintain an evidence-backed user Wiki without in-process prose generation.
 
 ## Integrate and Maintain MDGraph
 

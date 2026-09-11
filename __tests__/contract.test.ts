@@ -345,6 +345,7 @@ describe("contract freeze", () => {
       "Refresh Index",
       "Check Health",
       "Task Start",
+      "Wiki Maintenance",
       "CI And Artifacts",
       "Help",
       "Agent MCP"

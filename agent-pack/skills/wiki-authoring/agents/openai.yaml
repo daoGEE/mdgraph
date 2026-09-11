@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wiki Authoring"
+  short_description: "Author evidence-backed MDGraph Wiki pages"
+  default_prompt: "Use $wiki-authoring to create or update the planned project Wiki pages from current evidence."

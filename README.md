@@ -136,6 +136,12 @@ mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY update
 mdgraph relationships derive --dry-run --json --path /your/project
 mdgraph relationships derive --threshold 0.86 --json --path /your/project
 
+# Experimental user-maintained Wiki workflow
+mdgraph wiki plan --out .mdgraph/wiki-plan.json --path /your/project
+mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+
 # Agent-friendly workflow guide
 mdgraph usage --path /your/project
 ```
@@ -147,6 +153,8 @@ True MMR packing is opt-in; document round-robin remains the compatibility defau
 The experimental `query` command provides a bounded, parameterized DSL for document governance without changing `search` or the five-tool MCP surface.
 
 The experimental `relationships derive` command creates low-weight `RELATED_TO` edges only from a fresh, complete semantic-model index after independent-evidence and reciprocal-neighbor gates pass. It never runs automatically during indexing or watch mode. Both experimental workflows are documented in [Structured Query and Relationships](./docs/EN/Structured_Query_and_Relationships.md).
+
+The experimental `wiki` group deterministically plans pages, prepares bounded evidence briefs, reports update impact, and verifies maintenance fields, sources, and relative links. MDGraph does not generate or overwrite Wiki prose; use the host-agent workflow in [Knowledge Cards and Wiki Workflow](./docs/EN/Knowledge_Cards_and_Wiki_Workflow.md).
 
 ---
 

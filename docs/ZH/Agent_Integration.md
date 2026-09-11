@@ -96,6 +96,16 @@ Task-start documentation brief：
 2. 当用户要求 docs health 或 CI gate 时，使用 CLI `mdgraph doctor --json`
 3. 只有在 doctor 输出点名 affected documents 后才编辑原文件
 
+项目 Wiki authoring：
+
+1. 针对当前图运行一次 CLI `mdgraph wiki plan --out <plan-file>`。
+2. 运行 `mdgraph wiki status <wiki-dir> --plan <plan-file> --json`，只选择 missing 或 needs-update 页面。
+3. 每次获取一个 `mdgraph wiki brief <page-id> --plan <plan-file> --json`，阅读其 document/source-ref evidence 后再编写。
+4. 保留用户正文与维护 front matter，然后运行 `mdgraph wiki verify`。
+5. 人工评审 orphaned 页面；工作流永不自动删除它们。
+
+支持 reusable skill 的宿主可使用 [`agent-pack/skills/wiki-authoring`](../../agent-pack/skills/wiki-authoring/SKILL.md)，其他宿主可使用对应 prompt template。
+
 ## 当前限制
 
 - MDGraph 索引 Markdown 文档，不索引源码 AST 或任意文件。

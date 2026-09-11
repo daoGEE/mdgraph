@@ -119,6 +119,16 @@ Documentation health check:
 2. CLI `mdgraph doctor --json` when the user asks for docs health or CI gating
 3. Raw file edits only after the doctor output names affected documents
 
+Project Wiki authoring:
+
+1. Run CLI `mdgraph wiki plan --out <plan-file>` once for the current graph.
+2. Run `mdgraph wiki status <wiki-dir> --plan <plan-file> --json` and select only missing or needs-update pages.
+3. Fetch one `mdgraph wiki brief <page-id> --plan <plan-file> --json`, then read its document and source-ref evidence before writing.
+4. Preserve user prose and maintenance front matter, then run `mdgraph wiki verify`.
+5. Review orphaned pages manually; the workflow never deletes them.
+
+Hosts that support reusable skills can use [`agent-pack/skills/wiki-authoring`](../../agent-pack/skills/wiki-authoring/SKILL.md); other hosts can use the matching prompt template.
+
 ## Current Limits
 
 - MDGraph indexes Markdown documents, not source ASTs or arbitrary files.

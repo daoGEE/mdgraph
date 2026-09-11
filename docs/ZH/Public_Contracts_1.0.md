@@ -70,6 +70,10 @@ provider/evidence 门禁和 JSON 输出记录在
 [结构化查询与派生关系](Structured_Query_and_Relationships.md#派生相关文档关系)与输出契约中。稳定的 `search`
 命令与五工具 MCP surface 均未改变。
 
+`wiki plan/brief/status/verify` 是冻结后新增的实验性 CLI group。它不增加 MCP 工具、
+不生成正文，记录在 [Knowledge Card 与 Wiki 工作流](Knowledge_Cards_and_Wiki_Workflow.md)
+和输出契约中。
+
 项目相关命令接受 additive `--path <project>` flag，让 agent 和脚本不必切换
 shell cwd 即可定位仓库。
 

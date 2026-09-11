@@ -4,6 +4,12 @@ All notable changes to MDGraph are documented here. MDGraph follows semantic ver
 
 ## Unreleased
 
+### Added
+
+- Experimental deterministic Knowledge Cards on `node` plus spare-budget Card summaries in `context`.
+- Experimental `wiki plan/brief/status/verify` commands for evidence-backed user-maintained Wiki planning, impact status, and read-only verification.
+- A reusable Wiki authoring prompt/skill and a repository-owned self-Wiki acceptance artifact, without changing the five-tool MCP surface or adding a generation provider.
+
 ## 1.1.0 - 2026-08-03
 
 ### Added

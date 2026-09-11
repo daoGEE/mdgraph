@@ -14,6 +14,7 @@ MDGraph 采用以下已实现的流水线：扫描器 → 解析器 → 提取/�
 | 解析 | `src/resolution/link-resolver.ts` | 将 Markdown 和 WikiLink 目标解析为已索引的文档或章节。 |
 | 存储 | `src/db/*` | SQLite 连接、模式、记录替换、增量更新、图查询和存储诊断。 |
 | 查询 | `src/query/*` | 搜索排序、上下文打包、图追踪，以及实验性结构化查询 tokenizer/AST/executor。 |
+| Wiki | `src/wiki/*` | 实验性的确定性 Wiki 规划、证据 brief、影响状态和只读验证；正文继续由宿主 Agent/用户维护。 |
 | 评估 | `src/evaluation/*` | 检索评估 case、期望记录，以及 search/context/trace 质量的轻量指标。 |
 | Benchmark | `src/benchmark/*` | 结构化 with/without-MDGraph agent run record 解析和 paired delta 聚合。 |
 | Bundle | `src/bundle/*` | 基于 schema/source/config/document hashes 的私有目录图 bundle 创建和校验。 |
@@ -125,6 +126,12 @@ Diff report 包含 Markdown 文档新增、修改、删除、Git 识别的 renam
 `generateBenchmarkReport` 只消费结构化 `AgentRunRecord` JSON。它按 `questionId` 配对一个 `with_mdgraph` 和一个 `without_mdgraph` record，将不完整或重复 pair 报告为 skipped，并计算 file reads、searches、tool calls、MDGraph calls、字符/token 预算、延迟、raw-file fallback 和引用正确率 delta。它不解析 transcript、不调用模型，也不托管 agent run。
 
 `traceNodes` 在执行节点之间的有界图遍历，并返回每一步的边类型、来源和置信度。
+
+## Wiki 工作流
+
+实验性 Wiki 路径与 indexing 和自然语言 query ranking 分离。`buildWikiPlan` 只根据已索引文档 metadata 与显式图关系选择有证据的页面域，记录 graph/source hash，并为每页生成依赖局部 `evidenceHash`；该 hash 也会指纹化安全的项目 source ref。`buildWikiPageBrief` 复用 context packing、known files、Knowledge Card 和共享字符预算。
+
+`buildWikiStatus` 将用户维护页面的 front matter 与 plan 及当前依赖证据比较，只报告 `current`、`needs_update`、`missing` 或 `orphaned`，不修改文件。`verifyWiki` 增加有界检查，覆盖 plan 形状、已索引 source document、安全且存在的 source ref、evidence freshness 和可解析的相对 Markdown link。它不评判正文质量、不删除 orphaned 页面、不调用模型，也不增加 MCP 工具。
 
 ## MCP 边界
 

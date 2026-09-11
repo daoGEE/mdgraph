@@ -10,6 +10,8 @@ This pack contains reusable guidance for MCP-capable coding agents. It keeps hos
 - [`prompts/task-start-context.md`](prompts/task-start-context.md): prompt template for task-start documentation briefs.
 - [`prompts/relationship-trace.md`](prompts/relationship-trace.md): prompt template for relationship and dependency questions.
 - [`prompts/status-doctor.md`](prompts/status-doctor.md): prompt template for readiness, stale-index, and documentation health checks.
+- [`prompts/wiki-authoring.md`](prompts/wiki-authoring.md): prompt template for evidence-backed Wiki page creation and maintenance.
+- [`skills/wiki-authoring/SKILL.md`](skills/wiki-authoring/SKILL.md): reusable skill for WikiPlan, per-page brief, status, and verification workflows.
 
 ## Host Placement
 

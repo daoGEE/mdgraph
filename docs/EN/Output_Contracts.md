@@ -74,10 +74,12 @@ When semantic retrieval is requested but cannot run, `search` still returns FTS5
 
 - `query`: original query text.
 - `maxChars`: configured context budget.
-- `usedChars`: packed character count.
+- `usedChars`: packed `content` plus optional `cardSummary` character count.
 - `packing`: additive packing metadata with `strategy`; opt-in MMR also reports `similarity`, `mmrLambda`, and optional `redundancySkippedItems`.
 - `semanticDiagnostic`: optional provider fallback details; absent when semantic retrieval was not requested or completed normally.
-- `items`: context items with `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath`, optional `sourceRefs`, optional `riskNotes`, and `content`.
+- `items`: context items with `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath`, optional `sourceRefs`, optional `riskNotes`, optional `cardSummary`, and `content`.
+
+`cardSummary` is an experimental deterministic Knowledge Card summary. It is added only to the highest-ranked packed items when the original document content leaves spare budget; it is omitted if the complete summary does not fit, preserving original content and recovery fields.
 
 `riskNotes` can include lifecycle/trust cautions and deterministic content-risk notes such as prompt-injection text, active HTML/data URIs, or hidden Unicode format characters.
 
@@ -119,11 +121,36 @@ The compatibility default is `mmr-style-document-round-robin`. `--packing mmr` i
 
 The command fails before mutation for stale indexes, lexical-hash providers, incomplete current-profile vector coverage, unsafe options, or exceeded computation budgets. A successful non-dry run atomically replaces `RELATED_TO/embedding_similarity` edges. This output is experimental and does not change stable index, search, GraphJSON, or MCP contracts.
 
+## Experimental `wiki` workflow
+
+`mdgraph wiki plan --out <file> --json` writes a deterministic plan and returns `out` plus `plan`. The plan contains:
+
+- `format: "mdgraph-wiki-plan"`, `formatVersion: 1`, `graphHash`, and `sourceHash`.
+- `pages`: stable page records with `id`, `title`, safe Wiki-relative `path`, optional `parentId`, `purpose`, `audience`, `outline`, `documentIds`, project-relative `sourceRefs`, `evidenceQueries`, and page-local `evidenceHash`.
+
+`mdgraph wiki brief <page-id> --plan <file> --json` returns:
+
+- `format: "mdgraph-wiki-page-brief"`, `formatVersion: 1`, and the selected `page`.
+- `maxChars` and `usedChars`, where the used budget covers `contextItems` content/Card summaries and serialized `knowledgeCards`.
+- `sourceDocuments` with authoritative document IDs, paths, titles, lifecycle/type/trust metadata; plus `contextItems`, `knowledgeCards`, `writingRequirements`, and `suggestedNextQueries`.
+
+`mdgraph wiki status <wiki-dir> --plan <file> --json` is read-only and returns:
+
+- `format: "mdgraph-wiki-status"`, `formatVersion: 1`, `wikiDir`, and current/stale plan hashes.
+- `pages` with `current | needs_update | missing | orphaned`; every non-current page includes `reason` and an executable or review-oriented `recovery` action.
+- `summary` counts for all four states.
+
+`mdgraph wiki verify <wiki-dir> --plan <file> --json` is read-only and returns `format: "mdgraph-wiki-verification"`, `formatVersion: 1`, `valid`, structured `errors`, `warnings`, and the same `status`. Issues include stable `code`, page/path evidence when available, and `recovery`. Invalid verification exits non-zero.
+
+Plan and brief output is deterministic for the same graph and source state. Status and verification never overwrite Wiki prose, do not judge prose quality, and do not require embeddings or a generation provider.
+
 ## `node --json`
 
 `mdgraph node <query> --json` returns the resolved node record when found:
 
-- `id`, `label`, `kind`, `data`.
+- `id`, `label`, `kind`, `data`, and optional experimental `card` for document, section, entity, and source-ref nodes.
+
+`card` is a deterministic, non-persisted query projection with `nodeId`, `kind`, `label`, `summary`, `definitions`, `sourceRefs`, `relatedDocuments`, `evidence`, and optional omission counts in `truncated`. Arrays are stably ordered and retain node IDs, paths, edge kinds, provenance, confidence, anchors, or line ranges where applicable. Chunk nodes retain their existing shape without a card.
 
 When a section query is ambiguous, it returns:
 
