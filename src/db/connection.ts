@@ -38,13 +38,14 @@ export function openDatabase(projectRoot: string, options: OpenDatabaseOptions =
     db = createDatabase(target);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to open MDGraph database at ${target}: ${message}. Confirm Node.js >=22.5.0 has node:sqlite support, the directory is writable, and run \`mdgraph index\` to rebuild the local index if the database is corrupt.`);
+    throw new Error(`Failed to open MDGraph database at ${target}: ${message}. Use a Node.js build with node:sqlite and FTS5 (Node 22.23.2 or newer is verified), confirm the directory is writable, and run \`mdgraph index\` to rebuild the local index if the database is corrupt.`);
   }
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
   if (applySchema) {
     try {
       assertCompatibleExistingSchema(db, target);
+      ensureFts5Available(db);
       const hadMetadata = hasSchemaMetadata(db);
       const schemaSql = readSchemaSql();
       db.exec(schemaSql);
@@ -57,6 +58,19 @@ export function openDatabase(projectRoot: string, options: OpenDatabaseOptions =
     }
   }
   return db;
+}
+
+function ensureFts5Available(db: SqliteDatabase): void {
+  const capability = db.prepare("SELECT sqlite_compileoption_used('ENABLE_FTS5') AS enabled").get() as { enabled: number };
+  if (capability.enabled) return;
+  try {
+    // A runtime can load FTS5 as an extension without the compile-time option.
+    // Confirm actual availability before declaring the capability absent.
+    db.exec("CREATE VIRTUAL TABLE temp.mdgraph_fts5_probe USING fts5(content); DROP TABLE temp.mdgraph_fts5_probe;");
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("no such module: fts5")) throw error;
+    throw Object.assign(new Error("SQLite FTS5 is unavailable in this Node.js build. Upgrade to a Node.js build with FTS5, such as the verified Node 22.23.2 runtime, then run `mdgraph index` again.", { cause: error }), { code: "sqlite_fts5_unavailable" });
+  }
 }
 
 export function openExistingDatabase(projectRoot: string): SqliteDatabase {

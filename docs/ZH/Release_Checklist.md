@@ -15,6 +15,7 @@
 - 确认 focused contract tests 覆盖 MCP tool definitions、代表性 JSON fields、edge kinds、doctor warning shape、config defaults 和 schema compatibility guidance。
 - 已经返回结构化错误的命令，应确认错误输出包含稳定 `code` 和 remediation。
 - 确认实验性命令在使用指南、公开 ledger、输出契约和 release notes 中保持明确标记。
+- 确认 `wiki status` 与 `wiki verify` 保持只读，每个非 current 页面/issue 都有 recovery 指引，且五工具 MCP surface 不变。
 
 ## 证据门槛
 

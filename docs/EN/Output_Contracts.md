@@ -74,10 +74,12 @@ When semantic retrieval is requested but cannot run, `search` still returns FTS5
 
 - `query`: original query text.
 - `maxChars`: configured context budget.
-- `usedChars`: packed character count.
+- `usedChars`: packed `content` plus optional `cardSummary` character count.
 - `packing`: additive packing metadata with `strategy`; opt-in MMR also reports `similarity`, `mmrLambda`, and optional `redundancySkippedItems`.
 - `semanticDiagnostic`: optional provider fallback details; absent when semantic retrieval was not requested or completed normally.
-- `items`: context items with `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath`, optional `sourceRefs`, optional `riskNotes`, and `content`.
+- `items`: context items with `nodeId`, `documentId`, optional `sectionId`, optional `anchor`, `path`, `title`, optional `heading`, optional `lines`, `reason`, `matchedEntities`, optional `edgePath`, optional `sourceRefs`, optional `riskNotes`, optional `cardSummary`, and `content`.
+
+`cardSummary` is an experimental deterministic Knowledge Card summary. It is added only to the highest-ranked packed items when the original document content leaves spare budget; it is omitted if the complete summary does not fit, preserving original content and recovery fields.
 
 `riskNotes` can include lifecycle/trust cautions and deterministic content-risk notes such as prompt-injection text, active HTML/data URIs, or hidden Unicode format characters.
 
@@ -119,11 +121,36 @@ The compatibility default is `mmr-style-document-round-robin`. `--packing mmr` i
 
 The command fails before mutation for stale indexes, lexical-hash providers, incomplete current-profile vector coverage, unsafe options, or exceeded computation budgets. A successful non-dry run atomically replaces `RELATED_TO/embedding_similarity` edges. This output is experimental and does not change stable index, search, GraphJSON, or MCP contracts.
 
+## Experimental `wiki` workflow
+
+`mdgraph wiki plan --out <file> --json` writes a deterministic plan and returns `out` plus `plan`. The plan contains:
+
+- `format: "mdgraph-wiki-plan"`, `formatVersion: 1`, `graphHash`, and `sourceHash`.
+- `pages`: stable page records with `id`, `title`, safe Wiki-relative `path`, optional `parentId`, `purpose`, `audience`, `outline`, `documentIds`, project-relative `sourceRefs`, `evidenceQueries`, and page-local `evidenceHash`.
+
+`mdgraph wiki brief <page-id> --plan <file> --json` returns:
+
+- `format: "mdgraph-wiki-page-brief"`, `formatVersion: 1`, and the selected `page`.
+- `maxChars` and `usedChars`, where the used budget covers `contextItems` content/Card summaries and serialized `knowledgeCards`.
+- `sourceDocuments` with authoritative document IDs, paths, titles, lifecycle/type/trust metadata; plus `contextItems`, `knowledgeCards`, `writingRequirements`, and `suggestedNextQueries`.
+
+`mdgraph wiki status <wiki-dir> --plan <file> --json` is read-only and returns:
+
+- `format: "mdgraph-wiki-status"`, `formatVersion: 1`, `wikiDir`, and current/stale plan hashes.
+- `pages` with `current | needs_update | missing | orphaned`; every non-current page includes `reason` and an executable or review-oriented `recovery` action.
+- `summary` counts for all four states.
+
+`mdgraph wiki verify <wiki-dir> --plan <file> --json` is read-only and returns `format: "mdgraph-wiki-verification"`, `formatVersion: 1`, `valid`, structured `errors`, `warnings`, and the same `status`. Issues include stable `code`, page/path evidence when available, and `recovery`. Invalid verification exits non-zero.
+
+Plan and brief output is deterministic for the same graph and source state. Status and verification never overwrite Wiki prose, do not judge prose quality, and do not require embeddings or a generation provider.
+
 ## `node --json`
 
 `mdgraph node <query> --json` returns the resolved node record when found:
 
-- `id`, `label`, `kind`, `data`.
+- `id`, `label`, `kind`, `data`, and optional experimental `card` for document, section, entity, and source-ref nodes.
+
+`card` is a deterministic, non-persisted query projection with `nodeId`, `kind`, `label`, `summary`, `definitions`, `sourceRefs`, `relatedDocuments`, `evidence`, and optional omission counts in `truncated`. Arrays are stably ordered and retain node IDs, paths, edge kinds, provenance, confidence, anchors, or line ranges where applicable. Chunk nodes retain their existing shape without a card.
 
 When a section query is ambiguous, it returns:
 
@@ -306,3 +333,15 @@ Diff only compares Markdown graph records, source refs, and doctor warning codes
 Initial warning codes cover the existing doctor checks, front matter diagnostics, lifecycle governance, graph health, storage health, parse failures, and conservative convention linting: `index.stale`, `link.dead`, `source_ref.missing`, `definition.missing`, `definition.duplicate`, `content.risk`, `document.orphan`, `document.deleted`, `document.weakly_linked`, `document.deprecated_referenced`, `document.superseded_referenced`, `document.parse_failed`, `graph.missing_decision_link`, `storage.generated_path_indexed`, `storage.database_oversized`, `storage.fts_shadow_large`, `storage.high_degree_node`, `storage.vector_anomaly`, `front_matter.invalid_yaml`, `front_matter.not_mapping`, `front_matter.unclosed`, `front_matter.invalid_field`, `tag.invalid_format`, and `link.non_posix_path`.
 
 `mdgraph doctor --strict` keeps the same output shape and exits with a non-zero status when any summary issue count other than `documents` is greater than zero. `mdgraph doctor --fail-on <severity>` adds a typed warning gate without changing `--strict`, and `--changed` / `--since <ref>` return scoped reports with explicit scope metadata. Scoped reports include scoped Markdown paths plus directly related one-hop graph documents; deleted Markdown paths are preserved in scope metadata and reported with `document.deleted` after the index is fresh. Global storage summaries may still be present for observability, but storage warnings are omitted when `globalHealthIncluded` is `false`.
+
+## Evaluation evidence additions
+
+Evaluation cases add `retrievalEvidencePassed`; `metrics` add `retrievedEntityRecall`, `retrievedSourceRefRecall`, `retrievedEdgeKindCoverage`, and `contextIrrelevantRatio`. `observed` adds the corresponding returned-entity, returned-source-ref, and returned-edge-kind arrays. These report this query's exposed evidence. Legacy coverage metrics and `passed` retain their existing meaning. See [Evaluation Questions](Evaluation_Questions.md).
+
+## Knowledge Card ownership and Wiki maintenance
+
+Card references add optional `association` (`direct | inherited | related`), `originNodeId`, and `viaNodeId`. Optional `nextReads` contains paths, graph identity, reading reasons, and ownership. These fields count toward the full 4,000-character default Card JSON budget.
+
+New Wiki plans use formatVersion 2 and record `wikiDir`, dependency snapshots, source/page suggestions, and evidence gaps. Version 1 plans remain readable; upgrading through `wiki plan --from` requires `--wiki-dir` and a separate `--out` file. Page suggestions are complete page records; source suggestions contain `pageId`, `documentIds`, and `sourceRefs`.
+
+Brief, status, and verification retain formatVersion 1 with additive fields. Brief adds `supplementaryDocuments`, `sourceInspections`, `evidenceGaps`, and `dependencyEvidence`. Status pages add `changes`, `selectionChanges`, and `evidenceState`. Verify adds `scope: "maintenance-and-evidence"` and `contentReview: "not-evaluated"`; `valid` does not certify prose accuracy.

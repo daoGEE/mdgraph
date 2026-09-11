@@ -80,3 +80,17 @@ A/B 报告入口是 `mdgraph report --benchmark benchmark-runs.json --json`。�
 - 混合 Latin/CJK 的 config key、API route、source ref 和日文 symbol 查询。
 
 后续 CJK tokenizer、RRF/MMR 或 reranking 改动应和这个基线对比，但远程模型仍不应成为索引或搜索的必需路径。
+
+## 返回证据与兼容指标
+
+原有 `entityRecall`、`sourceRefRecall`、`edgeKindCoverage` 衡量实体、来源和关系类型是否存在于索引中（关系类型也包含 trace）。保留这些指标和原有 `passed` 的含义，它们不代表本次查询返回了对应证据。
+
+新增 `retrievedEntityRecall`、`retrievedSourceRefRecall`、`retrievedEdgeKindCoverage` 仅统计 search、context 和本次 trace 实际暴露的证据；对应名称记录在 `observed.retrievedEntities`、`retrievedSourceRefs`、`retrievedEdgeKinds`。`retrievalEvidencePassed` 要求原有检查和返回证据覆盖同时通过。`contextIrrelevantRatio` 是返回上下文中不属于预期文档的项目占比；空结果占比为零，但不代表召回成功。
+
+## 可重复的性能样本
+
+安装依赖后运行 `npm run baseline:performance -- 100,500`。脚本生成独立的合成文档集，索引 local-hash 向量、修改一个文档，测量全量/增量索引以及卡片、context、语义查询耗时。查询先预热一次，再报告五次采样的中位数。内存是操作后的进程 heap/RSS，不是峰值分配。JSON 包含运行时、平台、文档规模、记录计数和保留的样本路径。这些结果用于工程比较，不代表真实代理效果或生产大规模性能。
+
+## Knowledge／Wiki 输出基线
+
+运行 `npm run baseline:knowledge-wiki`，在固定的果园调度项目上测量 Card JSON 字符数、缺少归属标签的引用数量，以及已知文件在阅读建议中的位置。位置为 null 表示没有匹配的阅读建议，不表示搜索失败。Plan／Brief 输出用于检查项目通用规划和材料定位。这是输出行为比较，不是独立 Agent 的完成耗时或正文质量提升实验。

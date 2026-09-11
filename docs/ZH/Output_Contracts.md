@@ -74,10 +74,12 @@
 
 - `query`：原始查询文本。
 - `maxChars`：配置的上下文预算。
-- `usedChars`：已打包字符数。
+- `usedChars`：已打包 `content` 与可选 `cardSummary` 的字符总数。
 - `packing`：additive 打包 metadata，包含 `strategy`；可选 MMR 还会报告 `similarity`、`mmrLambda` 和可选 `redundancySkippedItems`。
 - `semanticDiagnostic`：可选 provider 降级详情；未请求 semantic retrieval 或正常完成时不出现。
-- `items`：上下文条目，包含 `nodeId`、`documentId`、可选 `sectionId`、可选 `anchor`、`path`、`title`、可选 `heading`、可选 `lines`、`reason`、`matchedEntities`、可选 `edgePath`、可选 `sourceRefs`、可选 `riskNotes` 和 `content`。
+- `items`：上下文条目，包含 `nodeId`、`documentId`、可选 `sectionId`、可选 `anchor`、`path`、`title`、可选 `heading`、可选 `lines`、`reason`、`matchedEntities`、可选 `edgePath`、可选 `sourceRefs`、可选 `riskNotes`、可选 `cardSummary` 和 `content`。
+
+`cardSummary` 是实验性的确定性 Knowledge Card 摘要。只有原始文档内容装入后仍有剩余预算时，才会为排名最高的已选条目增加该字段；预算不足以容纳完整摘要时省略它，不会挤掉原始内容或恢复字段。
 
 `riskNotes` 可包含生命周期/trust 提醒，以及确定性的内容风险提示，例如 prompt-injection 文本、active HTML/data URI 或隐藏 Unicode 格式字符。
 
@@ -119,11 +121,36 @@
 
 Stale index、lexical-hash provider、当前 profile vector coverage 不完整、不安全 option 或计算预算超限都会在 mutation 前失败。成功的非 dry-run 会原子替换 `RELATED_TO/embedding_similarity` edge。该输出是 experimental，不改变稳定的 index、search、GraphJSON 或 MCP 契约。
 
+## 实验性 `wiki` 工作流
+
+`mdgraph wiki plan --out <file> --json` 写入确定性 plan，并返回 `out` 与 `plan`。Plan 包含：
+
+- `format: "mdgraph-wiki-plan"`、`formatVersion: 1`、`graphHash` 和 `sourceHash`。
+- `pages`：稳定页面记录，包含 `id`、`title`、相对于 Wiki 的安全 `path`、可选 `parentId`、`purpose`、`audience`、`outline`、`documentIds`、项目相对 `sourceRefs`、`evidenceQueries` 和页面局部 `evidenceHash`。
+
+`mdgraph wiki brief <page-id> --plan <file> --json` 返回：
+
+- `format: "mdgraph-wiki-page-brief"`、`formatVersion: 1` 和选中的 `page`。
+- `maxChars` 与 `usedChars`；已用预算覆盖 `contextItems` 的内容/Card 摘要以及序列化的 `knowledgeCards`。
+- `sourceDocuments`（包含权威文档 ID、path、title、lifecycle/type/trust metadata），以及 `contextItems`、`knowledgeCards`、`writingRequirements` 和 `suggestedNextQueries`。
+
+`mdgraph wiki status <wiki-dir> --plan <file> --json` 是只读命令，返回：
+
+- `format: "mdgraph-wiki-status"`、`formatVersion: 1`、`wikiDir`，以及 current/stale plan hash 状态。
+- `pages` 状态为 `current | needs_update | missing | orphaned`；每个非 current 页面都包含 `reason` 和可执行或面向人工评审的 `recovery` 动作。
+- 四种状态的 `summary` 计数。
+
+`mdgraph wiki verify <wiki-dir> --plan <file> --json` 是只读命令，返回 `format: "mdgraph-wiki-verification"`、`formatVersion: 1`、`valid`、结构化 `errors`、`warnings` 和同一 `status`。Issue 包含稳定 `code`、可用时的页面/path evidence，以及 `recovery`。验证无效时进程以非零状态退出。
+
+同一 graph/source 状态产生确定性的 Plan 与 Brief。Status 和 verification 不覆盖 Wiki 正文、不评判自然语言质量，也不要求 embedding 或 generation provider。
+
 ## `node --json`
 
 `mdgraph node <query> --json` 在找到节点时返回：
 
-- `id`、`label`、`kind`、`data`。
+- `id`、`label`、`kind`、`data`，以及 document、section、entity、source-ref 节点可选的实验性 `card`。
+
+`card` 是确定性、非持久化的查询投影，包含 `nodeId`、`kind`、`label`、`summary`、`definitions`、`sourceRefs`、`relatedDocuments`、`evidence`，以及可选的 `truncated` 省略计数。数组采用稳定顺序，并在适用处保留 node ID、path、edge kind、provenance、confidence、anchor 或 line range。Chunk 节点保持原有形状，不附加 Card。
 
 当章节查询有歧义时，返回：
 
@@ -301,3 +328,15 @@ Diff 只比较 Markdown 图记录、source refs 和 doctor warning codes。它�
 - 问题数组：`orphanDocs`、`deadLinks`、`staleSourceRefs`、`missingDefinitions`、`weaklyLinkedDocs`、`possibleContradictions` 和 `contentRisks`。
 
 `mdgraph doctor --strict` 保持相同输出形状。当 `summary` 中除 `documents` 外的任一问题计数大于零时，以非零状态退出。
+
+## 评估证据补充字段
+
+评估 case 新增 `retrievalEvidencePassed`；`metrics` 新增 `retrievedEntityRecall`、`retrievedSourceRefRecall`、`retrievedEdgeKindCoverage`、`contextIrrelevantRatio`；`observed` 增加对应的实际返回实体、来源与关系类型数组。这些字段统计本次查询暴露的证据，旧覆盖指标及 `passed` 保持原有含义。详见[评估问题](Evaluation_Questions.md)。
+
+## Knowledge Card 归属与 Wiki 维护
+
+Card 引用新增可选的 `association`（`direct | inherited | related`）、`originNodeId` 和 `viaNodeId`。`nextReads` 为可选字段，包含实际路径、节点身份、阅读理由及归属。这些信息都计入默认 4,000 字符的完整 Card JSON 预算。
+
+新 Wiki 计划使用 formatVersion 2，记录 `wikiDir`、依赖快照、页面与来源建议、证据缺口。v1 继续可读；通过 `wiki plan --from` 升级时，需要明确 `--wiki-dir`，并写到另一个 `--out` 文件。页面建议包含完整页面记录；来源建议包含 `pageId`、`documentIds` 和 `sourceRefs`。
+
+Brief、Status、Verification 继续使用 formatVersion 1，通过新增字段扩展。Brief 增加 `supplementaryDocuments`、`sourceInspections`、`evidenceGaps` 和 `dependencyEvidence`。Status 页面增加 `changes`、`selectionChanges` 和 `evidenceState`。Verify 增加 `scope: "maintenance-and-evidence"` 与 `contentReview: "not-evaluated"`；`valid` 不代表正文正确性已获认证。

@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-11",
+  "codeRevision": "79b8230",
+  "planFormatVersion": 2,
+  "sourceHash": "ecfbe294370a993a85dd79e99087f0b3ce79def53e75b4f9c562ccea3149d689",
+  "wikiDir": "wiki",
+  "pageEvidenceHashes": {
+    "project-overview": "d4d27e529d50265d016722f319d49ff3e3e7d5d9f0ec46811ba58fbf4fd34cb3",
+    "architecture": "831426a7a0d31c645fcd3264ae4019a6469c049b8de41f7183276a8ac6eb8581",
+    "core-workflows": "874323b9d635caf762ddf252f09eb8a05f3ccd85a8037cc1db1ddd93e9e9b1db",
+    "development": "b55fb67da0b029121f79d9c86e61849e002363ce565e5590decb1347824f7d29",
+    "operations": "1eea7fe8dea23ea1563b0b362e41155a30be25ce5172736bd85238248c3567f1",
+    "reference": "c3ec2a257aed83db744060a6e3340634e92addbff4f1b2b7b58c4cc7a95f65a0"
+  },
+  "status": {
+    "current": 6,
+    "needs_update": 0,
+    "missing": 0,
+    "orphaned": 0
+  },
+  "planState": "current",
+  "verification": {
+    "valid": true,
+    "errors": [],
+    "warnings": [],
+    "scope": "maintenance-and-evidence",
+    "contentReview": "not-evaluated"
+  },
+  "contentReview": "Six pages reviewed and updated for the selected current sources; installed CLI/MCP and recovery steps executed on a separate local fixture.",
+  "limitations": [
+    "No independent review of all natural-language claims",
+    "No live external embedding provider",
+    "No Windows or remote CI run",
+    "The published registry release was not tested"
+  ],
+  "cleanDeliverySnapshot": {
+    "build": "passed",
+    "publicDocumentationLinks": "passed",
+    "freshIndex": "passed",
+    "wikiCurrentPages": 6,
+    "wikiVerification": "passed"
+  }
+}

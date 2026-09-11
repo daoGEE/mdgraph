@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-22%2B%20with%20FTS5-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
 <a href="./README-ZH.md">简体中文</a> · <a href="./docs/EN/README.md">Documentation</a> · <a href="./docs/EN/Architecture.md">Architecture</a> · <a href="./docs/EN/Agent_Integration.md">Agent Integration</a> · <a href="./docs/EN/Public_Contracts.md">Public Contracts</a>
@@ -136,6 +136,12 @@ mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY update
 mdgraph relationships derive --dry-run --json --path /your/project
 mdgraph relationships derive --threshold 0.86 --json --path /your/project
 
+# Experimental user-maintained Wiki workflow
+mdgraph wiki plan --out .mdgraph/wiki-plan.json --path /your/project
+mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+
 # Agent-friendly workflow guide
 mdgraph usage --path /your/project
 ```
@@ -147,6 +153,10 @@ True MMR packing is opt-in; document round-robin remains the compatibility defau
 The experimental `query` command provides a bounded, parameterized DSL for document governance without changing `search` or the five-tool MCP surface.
 
 The experimental `relationships derive` command creates low-weight `RELATED_TO` edges only from a fresh, complete semantic-model index after independent-evidence and reciprocal-neighbor gates pass. It never runs automatically during indexing or watch mode. Both experimental workflows are documented in [Structured Query and Relationships](./docs/EN/Structured_Query_and_Relationships.md).
+
+The experimental `wiki` group deterministically plans pages, prepares bounded evidence briefs, reports update impact, and verifies maintenance fields, sources, and relative links. MDGraph does not generate or overwrite Wiki prose; use the host-agent workflow in [Knowledge Cards and Wiki Workflow](./docs/EN/Knowledge_Cards_and_Wiki_Workflow.md).
+
+To preserve a Wiki plan's authored pages while refreshing its evidence, use `mdgraph wiki plan --from <plan> --out <next-plan> --path <project>`. Add `--wiki-dir wiki` when migrating a v1 plan. New plans use v2; review suggestions before adopting them. `current` describes dependency consistency, and `wiki verify` does not evaluate prose correctness.
 
 ---
 
@@ -222,7 +232,7 @@ Query-time provider failures fall back to FTS5/entity/graph results and emit a d
 
 ## Requirements
 
-- Node.js `>=22.5.0`
+- Node.js `>=22.5.0` with an FTS5-enabled `node:sqlite` build. Node 22.23.2 and 26.5.0 are verified; the version number alone does not guarantee FTS5. Use a current Node 22 or newer release.
 - SQLite support from Node's built-in `node:sqlite`
 - Markdown files in a local project directory
 

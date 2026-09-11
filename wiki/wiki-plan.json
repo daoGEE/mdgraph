@@ -1,0 +1,1121 @@
+{
+  "format": "mdgraph-wiki-plan",
+  "formatVersion": 2,
+  "graphHash": "e19147868f00794b407d56bb2bf33f8e10366c7ea512f92df1ae2413d784d996",
+  "sourceHash": "ecfbe294370a993a85dd79e99087f0b3ce79def53e75b4f9c562ccea3149d689",
+  "wikiDir": "wiki",
+  "strictFreshness": {
+    "state": "fresh",
+    "recommendation": "indexed Markdown files match the strict content-hash freshness check"
+  },
+  "pages": [
+    {
+      "id": "project-overview",
+      "title": "Project Overview",
+      "path": "index.md",
+      "purpose": "Explain the product boundary, core concepts, installation path, and the shortest successful workflow.",
+      "audience": "New users and coding agents evaluating or starting with the project.",
+      "outline": [
+        "What the project is",
+        "Core concepts",
+        "Install and index",
+        "First useful query",
+        "Next steps"
+      ],
+      "documentIds": [
+        "document:8f67f633956bd089da71",
+        "document:74000154224547605c60",
+        "document:07bb28e88d8cc03adc77",
+        "document:5a6d2d240750c8cbd406",
+        "document:6d45106c2e1ac9d7b990",
+        "document:1e6a3007f6e167ecdcde",
+        "document:5b0890d463a3c226ce10",
+        "document:69a08c1c5ece0db00859",
+        "document:6a962343f9021c7586ee",
+        "document:b45317a7f85feff6dd28",
+        "document:393ed3620976eee70c58",
+        "document:234b5c9ec85546293f9b"
+      ],
+      "sourceRefs": [],
+      "evidenceQueries": [
+        "product positioning and non-goals",
+        "installation indexing first query"
+      ],
+      "evidenceHash": "d4d27e529d50265d016722f319d49ff3e3e7d5d9f0ec46811ba58fbf4fd34cb3",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:8f67f633956bd089da71",
+            "path": "README-ZH.md",
+            "hash": "84002417473875d4c4dd680272682903f165679306477c257d14f457f442f57e"
+          },
+          {
+            "id": "document:74000154224547605c60",
+            "path": "README.md",
+            "hash": "045dc937af93cf8a22d47c0a2208e60f4ca0e05a35d6355692f0a202086e91d6"
+          },
+          {
+            "id": "document:07bb28e88d8cc03adc77",
+            "path": "agent-pack/README.md",
+            "hash": "06dfaa4c67914767a4cc4bd36cb56d809bdf61a4c4775e2bc5c5572b42bf36ad"
+          },
+          {
+            "id": "document:5a6d2d240750c8cbd406",
+            "path": "docs/EN/README.md",
+            "hash": "6ee9c11b9c79a3211d21d0414bbbbff0206e1d94b534def346ab8c724c3ff2be"
+          },
+          {
+            "id": "document:6d45106c2e1ac9d7b990",
+            "path": "docs/ZH/README.md",
+            "hash": "8c5f2b87b3a6771a093a6dac530c58ae63815256cf8370728210a0ab6f7ce1bc"
+          },
+          {
+            "id": "document:1e6a3007f6e167ecdcde",
+            "path": "AGENTS.md",
+            "hash": "b1930de778acf73b2d1742d0f614ba71efa3db10f0bdb18e5444ef64dcc802e5"
+          },
+          {
+            "id": "document:5b0890d463a3c226ce10",
+            "path": "CHANGELOG.md",
+            "hash": "de607cf1b131d65f07fb941e0e83f5581579244cfd5e323b50fedec13ffe827d"
+          },
+          {
+            "id": "document:69a08c1c5ece0db00859",
+            "path": "CONTRIBUTING.md",
+            "hash": "388afd681f61fc5533ae146899c94abac9ac73157b459d5ee3980be9b28603d7"
+          },
+          {
+            "id": "document:6a962343f9021c7586ee",
+            "path": "agent-pack/host-examples.md",
+            "hash": "1f4c8340b8b8219cac97e75386c7255de7bf737193453a8b1d47b5ad76269e59"
+          },
+          {
+            "id": "document:b45317a7f85feff6dd28",
+            "path": "agent-pack/mdgraph-agent-instructions.md",
+            "hash": "e3d3a502a89a3f914aa45802129cbe4be277e811576bad6d1fb820bc773c7b5b"
+          },
+          {
+            "id": "document:393ed3620976eee70c58",
+            "path": "agent-pack/prompts/relationship-trace.md",
+            "hash": "302ea460f391351e7784fe1ada66b8b90add37a36d7b8b625791ef4772e2e985"
+          },
+          {
+            "id": "document:234b5c9ec85546293f9b",
+            "path": "agent-pack/prompts/status-doctor.md",
+            "hash": "4c29c91f1713e351263199ac4f97e9659ea8751620e9a102185731d213b54d12"
+          }
+        ],
+        "sourceRefs": []
+      },
+      "gaps": []
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture",
+      "path": "architecture.md",
+      "parentId": "project-overview",
+      "purpose": "Describe implemented module boundaries, data flow, architectural decisions, and important tradeoffs.",
+      "audience": "Maintainers and contributors changing cross-module behavior.",
+      "outline": [
+        "System boundary",
+        "Module map",
+        "Data and query flow",
+        "Key decisions",
+        "Tradeoffs and extension points"
+      ],
+      "documentIds": [
+        "document:3b8753f801b69ad79a8f",
+        "document:58c1e7c0f7a50d9e9e17",
+        "document:378d5ea11a90afd6ddba",
+        "document:1e6a3007f6e167ecdcde",
+        "document:69a08c1c5ece0db00859",
+        "document:7d8640364f640c930cd9",
+        "document:5a6d2d240750c8cbd406",
+        "document:d39eab03dd9a982acc78",
+        "document:0a1b3f02e98407b82644",
+        "document:191a9050f50f5a821992",
+        "document:6f9470c362ec8ecd31d4",
+        "document:6d45106c2e1ac9d7b990"
+      ],
+      "sourceRefs": [
+        "src/bin/mdgraph.ts",
+        "src/db/repositories.ts",
+        "src/db/schema.sql",
+        "src/extraction/entity-extractor.ts",
+        "src/indexer.ts",
+        "src/mcp/tools.ts",
+        "src/query/context-builder.ts",
+        "src/query/knowledge-card.ts",
+        "src/query/search.ts",
+        "src/query/structured-query-executor.ts",
+        "src/query/structured-query.ts",
+        "src/query/trace.ts",
+        "src/relationships/derive-related.ts",
+        "src/semantic/ollama-provider.ts",
+        "src/semantic/provider-registry.ts",
+        "src/semantic/provider.ts",
+        "src/types.ts",
+        "src/wiki/wiki-dependencies.ts",
+        "src/wiki/wiki-domains.ts",
+        "src/wiki/wiki-evidence.ts",
+        "src/wiki/wiki-plan.ts",
+        "src/wiki/wiki-status.ts"
+      ],
+      "evidenceQueries": [
+        "implemented architecture module boundaries",
+        "architecture decisions and tradeoffs"
+      ],
+      "evidenceHash": "831426a7a0d31c645fcd3264ae4019a6469c049b8de41f7183276a8ac6eb8581",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:3b8753f801b69ad79a8f",
+            "path": "docs/ZH/Architecture.md",
+            "hash": "372fe46c268819cfd5572522a1f20ee95e6eed4060e215006f73cb8adc397b84"
+          },
+          {
+            "id": "document:58c1e7c0f7a50d9e9e17",
+            "path": "docs/EN/Architecture.md",
+            "hash": "cdd3e9b0124dee65800a403e8e52cb263662a734415951bc9d4c55274889930c"
+          },
+          {
+            "id": "document:378d5ea11a90afd6ddba",
+            "path": "docs/ZH/Knowledge_Cards_and_Wiki_Workflow.md",
+            "hash": "7f4ab95e96335646f42263337bec4c4145c4d9cd601c28c80f77e5279613bf19"
+          },
+          {
+            "id": "document:1e6a3007f6e167ecdcde",
+            "path": "AGENTS.md",
+            "hash": "b1930de778acf73b2d1742d0f614ba71efa3db10f0bdb18e5444ef64dcc802e5"
+          },
+          {
+            "id": "document:69a08c1c5ece0db00859",
+            "path": "CONTRIBUTING.md",
+            "hash": "388afd681f61fc5533ae146899c94abac9ac73157b459d5ee3980be9b28603d7"
+          },
+          {
+            "id": "document:7d8640364f640c930cd9",
+            "path": "docs/EN/Public_Contracts.md",
+            "hash": "6303c8d78ff44fdbd74b823df72e8798540ca1f2f4d629dd85440213a0d08d7a"
+          },
+          {
+            "id": "document:5a6d2d240750c8cbd406",
+            "path": "docs/EN/README.md",
+            "hash": "6ee9c11b9c79a3211d21d0414bbbbff0206e1d94b534def346ab8c724c3ff2be"
+          },
+          {
+            "id": "document:d39eab03dd9a982acc78",
+            "path": "docs/EN/Retrieval_and_Context.md",
+            "hash": "597091b64865fc5a86bfdeecef667befe3415e91026cb4ec073dc8ca2f10bdb6"
+          },
+          {
+            "id": "document:0a1b3f02e98407b82644",
+            "path": "docs/EN/Structured_Query_and_Relationships.md",
+            "hash": "ad0266a6785a5ec85ab9d80e91e168152d586f8042cad3bfb21770b004ca2281"
+          },
+          {
+            "id": "document:191a9050f50f5a821992",
+            "path": "docs/ZH/Public_Contracts_1.0.md",
+            "hash": "c18a5384c448e5e40dab9e881a5965db6e2b9676de91b273ffdba8125c654312"
+          },
+          {
+            "id": "document:6f9470c362ec8ecd31d4",
+            "path": "docs/ZH/Public_Contracts.md",
+            "hash": "f559dea22ec4584033508717a5acc634791ca4735f7b709004a0a678552e2e78"
+          },
+          {
+            "id": "document:6d45106c2e1ac9d7b990",
+            "path": "docs/ZH/README.md",
+            "hash": "8c5f2b87b3a6771a093a6dac530c58ae63815256cf8370728210a0ab6f7ce1bc"
+          }
+        ],
+        "sourceRefs": [
+          {
+            "path": "src/bin/mdgraph.ts",
+            "fingerprint": "3124bb2b6e43d1f9ddede11961d17b943e34e5608cbf5a116f476fdbdfb1ce22"
+          },
+          {
+            "path": "src/db/repositories.ts",
+            "fingerprint": "5790c38e471cd18c9786401df089334f53b10abd158e4bafe33e318869296163"
+          },
+          {
+            "path": "src/db/schema.sql",
+            "fingerprint": "867b54c07881b2d5cb63b5324aa606e930fcd1df3761046b5ab26792ffa77c20"
+          },
+          {
+            "path": "src/extraction/entity-extractor.ts",
+            "fingerprint": "7f2fd61117bb58675b37b0202024ba425f0d0ed2dde9dd3bfc9ae32c426eadb7"
+          },
+          {
+            "path": "src/indexer.ts",
+            "fingerprint": "12be75fc1d227ea30425be80864994f785a1ef740736eaa5c42f93d4b9b71db6"
+          },
+          {
+            "path": "src/mcp/tools.ts",
+            "fingerprint": "f960448d7dae3f57995918d22b85399047bda4ad3cc7827eddaaceca200d74ec"
+          },
+          {
+            "path": "src/query/context-builder.ts",
+            "fingerprint": "ac805485895168dfc775cdfab26767b7cc8b7f7037a742080d4ba62afab92ef0"
+          },
+          {
+            "path": "src/query/knowledge-card.ts",
+            "fingerprint": "3c46ff820d5b58e9fa847fbc945dbc0ad855f421d0419c6b4e316fa2c6d25df9"
+          },
+          {
+            "path": "src/query/search.ts",
+            "fingerprint": "f58a41e8f6a6ff4df02e67d480eea346213a7e0cd8cc1a8a9b698e461c82ea3b"
+          },
+          {
+            "path": "src/query/structured-query-executor.ts",
+            "fingerprint": "630e385e354b7e45a27068d6bd9eafd652df165da99c0800f2b088fc3cc3d41e"
+          },
+          {
+            "path": "src/query/structured-query.ts",
+            "fingerprint": "0f347c48c75a8fcbe310fb35047085fa79af03ab48a33422246c5c1b7f3e1d43"
+          },
+          {
+            "path": "src/query/trace.ts",
+            "fingerprint": "4540bef7260ebb302bd7f6d4e81bd54135b76c513ce2405d1bbaf6d202b1fbeb"
+          },
+          {
+            "path": "src/relationships/derive-related.ts",
+            "fingerprint": "492dfdf5b07ff4ef3b7638d319ccd511a1ee169bca199c6ab9e3e7a8585a9988"
+          },
+          {
+            "path": "src/semantic/ollama-provider.ts",
+            "fingerprint": "5b301a222f6f78c181f28a88de1776f5ca5cefacafeadbc6ce7ad272f6c5d0e0"
+          },
+          {
+            "path": "src/semantic/provider-registry.ts",
+            "fingerprint": "3e2cba855ec7421c5ec4b55beb22f8c1f5f626ca4b25d779e79ffc0206d9bc0d"
+          },
+          {
+            "path": "src/semantic/provider.ts",
+            "fingerprint": "cefcabd4d8309c02cd01130489f20b113595ddd65d407f4262002961d37ab252"
+          },
+          {
+            "path": "src/types.ts",
+            "fingerprint": "22c30bfa843fb9e875754e02c5f8ccfb02bc3ae26b1d3901060c28337be14be7"
+          },
+          {
+            "path": "src/wiki/wiki-dependencies.ts",
+            "fingerprint": "5002d661b587acaf62b4ac0e36458c82a04755d64fa2929ee314c9b99b4fdbaf"
+          },
+          {
+            "path": "src/wiki/wiki-domains.ts",
+            "fingerprint": "1585e0411ccb0e0974a1bfbea4d6c02736948d3d36e4da5ab9ba83e79388ee5e"
+          },
+          {
+            "path": "src/wiki/wiki-evidence.ts",
+            "fingerprint": "b849dd69797d4652dc97b98d766381d679e2a718d2ff6d795062f6273bd63ba0"
+          },
+          {
+            "path": "src/wiki/wiki-plan.ts",
+            "fingerprint": "ccc2fda7880c9d000363a9ec4bc9e0d149677926fd4a7e4449274f44342ecbe3"
+          },
+          {
+            "path": "src/wiki/wiki-status.ts",
+            "fingerprint": "9fda23c20210d5b50f639b621f6f2ff11ef7e180275d525542be7df3f1d2dd22"
+          }
+        ]
+      },
+      "gaps": []
+    },
+    {
+      "id": "core-workflows",
+      "title": "Core Workflows",
+      "path": "core-workflows.md",
+      "parentId": "project-overview",
+      "purpose": "Explain the main end-to-end user and agent workflows with their evidence and source entry points.",
+      "audience": "Users and coding agents applying the project to real work.",
+      "outline": [
+        "Indexing workflow",
+        "Retrieval workflow",
+        "Graph navigation",
+        "Agent integration",
+        "Workflow boundaries"
+      ],
+      "documentIds": [
+        "document:0319cf484f63a93e2cf1",
+        "document:f86376f234c2f0c5f825",
+        "document:393ed3620976eee70c58",
+        "document:d39eab03dd9a982acc78",
+        "document:0a1b3f02e98407b82644",
+        "document:378d5ea11a90afd6ddba",
+        "document:7f254a7beff8008f7103",
+        "document:e92601c8d33f2a6deec8",
+        "document:07bb28e88d8cc03adc77",
+        "document:58c1e7c0f7a50d9e9e17",
+        "document:0af6411942f24677ee24",
+        "document:55c0ef382570d9ffb2ce"
+      ],
+      "sourceRefs": [
+        "src/bin/mdgraph.ts",
+        "src/db/repositories.ts",
+        "src/db/schema.sql",
+        "src/extraction/entity-extractor.ts",
+        "src/indexer.ts",
+        "src/mcp/tools.ts",
+        "src/query/context-builder.ts",
+        "src/query/knowledge-card.ts",
+        "src/query/search.ts",
+        "src/query/structured-query-executor.ts",
+        "src/query/structured-query.ts",
+        "src/query/trace.ts",
+        "src/relationships/derive-related.ts",
+        "src/semantic/ollama-provider.ts",
+        "src/semantic/provider-registry.ts",
+        "src/semantic/provider.ts",
+        "src/semantic/status.ts",
+        "src/types.ts",
+        "src/watcher/file-watcher.ts",
+        "src/watcher/watch-health.ts",
+        "src/wiki/wiki-dependencies.ts",
+        "src/wiki/wiki-domains.ts",
+        "src/wiki/wiki-evidence.ts",
+        "src/wiki/wiki-plan.ts",
+        "src/wiki/wiki-status.ts"
+      ],
+      "evidenceQueries": [
+        "core indexing and retrieval workflows",
+        "agent search context node trace workflow"
+      ],
+      "evidenceHash": "874323b9d635caf762ddf252f09eb8a05f3ccd85a8037cc1db1ddd93e9e9b1db",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:0319cf484f63a93e2cf1",
+            "path": "docs/ZH/Retrieval_and_Context.md",
+            "hash": "7376cefd97ffef6db91932da9956a11691afc717c973e0536c9e53b4cf964143"
+          },
+          {
+            "id": "document:f86376f234c2f0c5f825",
+            "path": "docs/ZH/Structured_Query_and_Relationships.md",
+            "hash": "5da192755a055f621bd7f79c3894ca8bd26e816454cbce7b0de87ab19208a17f"
+          },
+          {
+            "id": "document:393ed3620976eee70c58",
+            "path": "agent-pack/prompts/relationship-trace.md",
+            "hash": "302ea460f391351e7784fe1ada66b8b90add37a36d7b8b625791ef4772e2e985"
+          },
+          {
+            "id": "document:d39eab03dd9a982acc78",
+            "path": "docs/EN/Retrieval_and_Context.md",
+            "hash": "597091b64865fc5a86bfdeecef667befe3415e91026cb4ec073dc8ca2f10bdb6"
+          },
+          {
+            "id": "document:0a1b3f02e98407b82644",
+            "path": "docs/EN/Structured_Query_and_Relationships.md",
+            "hash": "ad0266a6785a5ec85ab9d80e91e168152d586f8042cad3bfb21770b004ca2281"
+          },
+          {
+            "id": "document:378d5ea11a90afd6ddba",
+            "path": "docs/ZH/Knowledge_Cards_and_Wiki_Workflow.md",
+            "hash": "7f4ab95e96335646f42263337bec4c4145c4d9cd601c28c80f77e5279613bf19"
+          },
+          {
+            "id": "document:7f254a7beff8008f7103",
+            "path": "agent-pack/prompts/task-start-context.md",
+            "hash": "467656eee20810c85f043d87665cef3beea09ccb4817cc0a59d4d5636b3faafa"
+          },
+          {
+            "id": "document:e92601c8d33f2a6deec8",
+            "path": "docs/EN/Knowledge_Cards_and_Wiki_Workflow.md",
+            "hash": "92dec5b56184f4299812db3f1c05119f093afc81546635bf7d0d6052ed8817e3"
+          },
+          {
+            "id": "document:07bb28e88d8cc03adc77",
+            "path": "agent-pack/README.md",
+            "hash": "06dfaa4c67914767a4cc4bd36cb56d809bdf61a4c4775e2bc5c5572b42bf36ad"
+          },
+          {
+            "id": "document:58c1e7c0f7a50d9e9e17",
+            "path": "docs/EN/Architecture.md",
+            "hash": "cdd3e9b0124dee65800a403e8e52cb263662a734415951bc9d4c55274889930c"
+          },
+          {
+            "id": "document:0af6411942f24677ee24",
+            "path": "docs/EN/Evaluation_Questions.md",
+            "hash": "fc737bcdb1e1f61558825b5b1977358c5e22941282c073851a81994e39132c8f"
+          },
+          {
+            "id": "document:55c0ef382570d9ffb2ce",
+            "path": "docs/EN/Operations.md",
+            "hash": "3bd421bbfd8012abcafc388651450131b3c195751b166a4d2aec1bf6cad55309"
+          }
+        ],
+        "sourceRefs": [
+          {
+            "path": "src/bin/mdgraph.ts",
+            "fingerprint": "3124bb2b6e43d1f9ddede11961d17b943e34e5608cbf5a116f476fdbdfb1ce22"
+          },
+          {
+            "path": "src/db/repositories.ts",
+            "fingerprint": "5790c38e471cd18c9786401df089334f53b10abd158e4bafe33e318869296163"
+          },
+          {
+            "path": "src/db/schema.sql",
+            "fingerprint": "867b54c07881b2d5cb63b5324aa606e930fcd1df3761046b5ab26792ffa77c20"
+          },
+          {
+            "path": "src/extraction/entity-extractor.ts",
+            "fingerprint": "7f2fd61117bb58675b37b0202024ba425f0d0ed2dde9dd3bfc9ae32c426eadb7"
+          },
+          {
+            "path": "src/indexer.ts",
+            "fingerprint": "12be75fc1d227ea30425be80864994f785a1ef740736eaa5c42f93d4b9b71db6"
+          },
+          {
+            "path": "src/mcp/tools.ts",
+            "fingerprint": "f960448d7dae3f57995918d22b85399047bda4ad3cc7827eddaaceca200d74ec"
+          },
+          {
+            "path": "src/query/context-builder.ts",
+            "fingerprint": "ac805485895168dfc775cdfab26767b7cc8b7f7037a742080d4ba62afab92ef0"
+          },
+          {
+            "path": "src/query/knowledge-card.ts",
+            "fingerprint": "3c46ff820d5b58e9fa847fbc945dbc0ad855f421d0419c6b4e316fa2c6d25df9"
+          },
+          {
+            "path": "src/query/search.ts",
+            "fingerprint": "f58a41e8f6a6ff4df02e67d480eea346213a7e0cd8cc1a8a9b698e461c82ea3b"
+          },
+          {
+            "path": "src/query/structured-query-executor.ts",
+            "fingerprint": "630e385e354b7e45a27068d6bd9eafd652df165da99c0800f2b088fc3cc3d41e"
+          },
+          {
+            "path": "src/query/structured-query.ts",
+            "fingerprint": "0f347c48c75a8fcbe310fb35047085fa79af03ab48a33422246c5c1b7f3e1d43"
+          },
+          {
+            "path": "src/query/trace.ts",
+            "fingerprint": "4540bef7260ebb302bd7f6d4e81bd54135b76c513ce2405d1bbaf6d202b1fbeb"
+          },
+          {
+            "path": "src/relationships/derive-related.ts",
+            "fingerprint": "492dfdf5b07ff4ef3b7638d319ccd511a1ee169bca199c6ab9e3e7a8585a9988"
+          },
+          {
+            "path": "src/semantic/ollama-provider.ts",
+            "fingerprint": "5b301a222f6f78c181f28a88de1776f5ca5cefacafeadbc6ce7ad272f6c5d0e0"
+          },
+          {
+            "path": "src/semantic/provider-registry.ts",
+            "fingerprint": "3e2cba855ec7421c5ec4b55beb22f8c1f5f626ca4b25d779e79ffc0206d9bc0d"
+          },
+          {
+            "path": "src/semantic/provider.ts",
+            "fingerprint": "cefcabd4d8309c02cd01130489f20b113595ddd65d407f4262002961d37ab252"
+          },
+          {
+            "path": "src/semantic/status.ts",
+            "fingerprint": "90884812620075a3c0c190dfd2f83fa5eb3b6ff7876f5aee5b9249a29d3d1399"
+          },
+          {
+            "path": "src/types.ts",
+            "fingerprint": "22c30bfa843fb9e875754e02c5f8ccfb02bc3ae26b1d3901060c28337be14be7"
+          },
+          {
+            "path": "src/watcher/file-watcher.ts",
+            "fingerprint": "61c8ba4452740c1e3ccfb46437c2175886bd4be7c0f8f1d5b87ec8450c32866c"
+          },
+          {
+            "path": "src/watcher/watch-health.ts",
+            "fingerprint": "b0276f49d7f23d86cb5f678a734fc8ff348e126d348624f74b667d8102ca7d37"
+          },
+          {
+            "path": "src/wiki/wiki-dependencies.ts",
+            "fingerprint": "5002d661b587acaf62b4ac0e36458c82a04755d64fa2929ee314c9b99b4fdbaf"
+          },
+          {
+            "path": "src/wiki/wiki-domains.ts",
+            "fingerprint": "1585e0411ccb0e0974a1bfbea4d6c02736948d3d36e4da5ab9ba83e79388ee5e"
+          },
+          {
+            "path": "src/wiki/wiki-evidence.ts",
+            "fingerprint": "b849dd69797d4652dc97b98d766381d679e2a718d2ff6d795062f6273bd63ba0"
+          },
+          {
+            "path": "src/wiki/wiki-plan.ts",
+            "fingerprint": "ccc2fda7880c9d000363a9ec4bc9e0d149677926fd4a7e4449274f44342ecbe3"
+          },
+          {
+            "path": "src/wiki/wiki-status.ts",
+            "fingerprint": "9fda23c20210d5b50f639b621f6f2ff11ef7e180275d525542be7df3f1d2dd22"
+          }
+        ]
+      },
+      "gaps": []
+    },
+    {
+      "id": "development",
+      "title": "Development Guide",
+      "path": "development.md",
+      "parentId": "project-overview",
+      "purpose": "Give contributors the commands, conventions, test strategy, and repository boundaries needed to make safe changes.",
+      "audience": "Contributors and maintainers implementing or reviewing changes.",
+      "outline": [
+        "Development setup",
+        "Repository conventions",
+        "Build and test",
+        "Change workflow",
+        "Contribution checks"
+      ],
+      "documentIds": [
+        "document:69a08c1c5ece0db00859",
+        "document:1e6a3007f6e167ecdcde",
+        "document:58c1e7c0f7a50d9e9e17",
+        "document:0af6411942f24677ee24",
+        "document:8f67f633956bd089da71",
+        "document:74000154224547605c60"
+      ],
+      "sourceRefs": [
+        "src/db/repositories.ts",
+        "src/db/schema.sql",
+        "src/indexer.ts",
+        "src/query/context-builder.ts",
+        "src/query/knowledge-card.ts",
+        "src/semantic/ollama-provider.ts",
+        "src/semantic/provider-registry.ts",
+        "src/semantic/provider.ts",
+        "src/types.ts",
+        "src/wiki/wiki-dependencies.ts",
+        "src/wiki/wiki-plan.ts",
+        "src/wiki/wiki-status.ts"
+      ],
+      "evidenceQueries": [
+        "development setup build test commands",
+        "contribution conventions and repository boundaries"
+      ],
+      "evidenceHash": "b55fb67da0b029121f79d9c86e61849e002363ce565e5590decb1347824f7d29",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:69a08c1c5ece0db00859",
+            "path": "CONTRIBUTING.md",
+            "hash": "388afd681f61fc5533ae146899c94abac9ac73157b459d5ee3980be9b28603d7"
+          },
+          {
+            "id": "document:1e6a3007f6e167ecdcde",
+            "path": "AGENTS.md",
+            "hash": "b1930de778acf73b2d1742d0f614ba71efa3db10f0bdb18e5444ef64dcc802e5"
+          },
+          {
+            "id": "document:58c1e7c0f7a50d9e9e17",
+            "path": "docs/EN/Architecture.md",
+            "hash": "cdd3e9b0124dee65800a403e8e52cb263662a734415951bc9d4c55274889930c"
+          },
+          {
+            "id": "document:0af6411942f24677ee24",
+            "path": "docs/EN/Evaluation_Questions.md",
+            "hash": "fc737bcdb1e1f61558825b5b1977358c5e22941282c073851a81994e39132c8f"
+          },
+          {
+            "id": "document:8f67f633956bd089da71",
+            "path": "README-ZH.md",
+            "hash": "84002417473875d4c4dd680272682903f165679306477c257d14f457f442f57e"
+          },
+          {
+            "id": "document:74000154224547605c60",
+            "path": "README.md",
+            "hash": "045dc937af93cf8a22d47c0a2208e60f4ca0e05a35d6355692f0a202086e91d6"
+          }
+        ],
+        "sourceRefs": [
+          {
+            "path": "src/db/repositories.ts",
+            "fingerprint": "5790c38e471cd18c9786401df089334f53b10abd158e4bafe33e318869296163"
+          },
+          {
+            "path": "src/db/schema.sql",
+            "fingerprint": "867b54c07881b2d5cb63b5324aa606e930fcd1df3761046b5ab26792ffa77c20"
+          },
+          {
+            "path": "src/indexer.ts",
+            "fingerprint": "12be75fc1d227ea30425be80864994f785a1ef740736eaa5c42f93d4b9b71db6"
+          },
+          {
+            "path": "src/query/context-builder.ts",
+            "fingerprint": "ac805485895168dfc775cdfab26767b7cc8b7f7037a742080d4ba62afab92ef0"
+          },
+          {
+            "path": "src/query/knowledge-card.ts",
+            "fingerprint": "3c46ff820d5b58e9fa847fbc945dbc0ad855f421d0419c6b4e316fa2c6d25df9"
+          },
+          {
+            "path": "src/semantic/ollama-provider.ts",
+            "fingerprint": "5b301a222f6f78c181f28a88de1776f5ca5cefacafeadbc6ce7ad272f6c5d0e0"
+          },
+          {
+            "path": "src/semantic/provider-registry.ts",
+            "fingerprint": "3e2cba855ec7421c5ec4b55beb22f8c1f5f626ca4b25d779e79ffc0206d9bc0d"
+          },
+          {
+            "path": "src/semantic/provider.ts",
+            "fingerprint": "cefcabd4d8309c02cd01130489f20b113595ddd65d407f4262002961d37ab252"
+          },
+          {
+            "path": "src/types.ts",
+            "fingerprint": "22c30bfa843fb9e875754e02c5f8ccfb02bc3ae26b1d3901060c28337be14be7"
+          },
+          {
+            "path": "src/wiki/wiki-dependencies.ts",
+            "fingerprint": "5002d661b587acaf62b4ac0e36458c82a04755d64fa2929ee314c9b99b4fdbaf"
+          },
+          {
+            "path": "src/wiki/wiki-plan.ts",
+            "fingerprint": "ccc2fda7880c9d000363a9ec4bc9e0d149677926fd4a7e4449274f44342ecbe3"
+          },
+          {
+            "path": "src/wiki/wiki-status.ts",
+            "fingerprint": "9fda23c20210d5b50f639b621f6f2ff11ef7e180275d525542be7df3f1d2dd22"
+          }
+        ]
+      },
+      "gaps": []
+    },
+    {
+      "id": "operations",
+      "title": "Operations and Troubleshooting",
+      "path": "operations.md",
+      "parentId": "project-overview",
+      "purpose": "Explain runtime operation, diagnostics, failure recovery, freshness, and provider or watcher troubleshooting.",
+      "audience": "Users and maintainers diagnosing an unhealthy or stale project workflow.",
+      "outline": [
+        "Operational model",
+        "Freshness and watch",
+        "Diagnostics",
+        "Common failures",
+        "Recovery paths"
+      ],
+      "documentIds": [
+        "document:27a30ef49dab21df6e0f",
+        "document:55c0ef382570d9ffb2ce",
+        "document:234b5c9ec85546293f9b",
+        "document:65e845912ccc3a26fef0",
+        "document:2cf8bb3d2406ff1340fa",
+        "document:07bb28e88d8cc03adc77",
+        "document:5b0890d463a3c226ce10",
+        "document:0af6411942f24677ee24",
+        "document:4c8106ea0d3b12529fd4",
+        "document:7d8640364f640c930cd9",
+        "document:5a6d2d240750c8cbd406",
+        "document:d39eab03dd9a982acc78"
+      ],
+      "sourceRefs": [
+        "src/bin/mdgraph.ts",
+        "src/db/schema.sql",
+        "src/extraction/entity-extractor.ts",
+        "src/indexer.ts",
+        "src/query/context-builder.ts",
+        "src/query/search.ts",
+        "src/semantic/ollama-provider.ts",
+        "src/semantic/provider.ts",
+        "src/semantic/status.ts",
+        "src/types.ts",
+        "src/watcher/file-watcher.ts",
+        "src/watcher/watch-health.ts",
+        "src/wiki/wiki-dependencies.ts",
+        "src/wiki/wiki-domains.ts",
+        "src/wiki/wiki-evidence.ts"
+      ],
+      "evidenceQueries": [
+        "operations troubleshooting doctor freshness",
+        "watch provider failure recovery"
+      ],
+      "evidenceHash": "1eea7fe8dea23ea1563b0b362e41155a30be25ce5172736bd85238248c3567f1",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:27a30ef49dab21df6e0f",
+            "path": "docs/ZH/Operations.md",
+            "hash": "46df35bd8c5114849c02c600a563a686935164af8e0301ad90b39f26d67e81b2"
+          },
+          {
+            "id": "document:55c0ef382570d9ffb2ce",
+            "path": "docs/EN/Operations.md",
+            "hash": "3bd421bbfd8012abcafc388651450131b3c195751b166a4d2aec1bf6cad55309"
+          },
+          {
+            "id": "document:234b5c9ec85546293f9b",
+            "path": "agent-pack/prompts/status-doctor.md",
+            "hash": "4c29c91f1713e351263199ac4f97e9659ea8751620e9a102185731d213b54d12"
+          },
+          {
+            "id": "document:65e845912ccc3a26fef0",
+            "path": "docs/EN/Release_Checklist.md",
+            "hash": "265d716ce4b1b9192d861ed11db55623393dc2f1402ae773ca2a0da69a1baec4"
+          },
+          {
+            "id": "document:2cf8bb3d2406ff1340fa",
+            "path": "docs/ZH/Release_Checklist.md",
+            "hash": "f5cfd50de5c702fb899339916df48b97a1eb7e7eb09e4db424fc7e5d8973128d"
+          },
+          {
+            "id": "document:07bb28e88d8cc03adc77",
+            "path": "agent-pack/README.md",
+            "hash": "06dfaa4c67914767a4cc4bd36cb56d809bdf61a4c4775e2bc5c5572b42bf36ad"
+          },
+          {
+            "id": "document:5b0890d463a3c226ce10",
+            "path": "CHANGELOG.md",
+            "hash": "de607cf1b131d65f07fb941e0e83f5581579244cfd5e323b50fedec13ffe827d"
+          },
+          {
+            "id": "document:0af6411942f24677ee24",
+            "path": "docs/EN/Evaluation_Questions.md",
+            "hash": "fc737bcdb1e1f61558825b5b1977358c5e22941282c073851a81994e39132c8f"
+          },
+          {
+            "id": "document:4c8106ea0d3b12529fd4",
+            "path": "docs/EN/Output_Contracts.md",
+            "hash": "21a245c6435d8cce0b72dc5d6bd039dd22311354c25f1bcb226f1104acaf4f89"
+          },
+          {
+            "id": "document:7d8640364f640c930cd9",
+            "path": "docs/EN/Public_Contracts.md",
+            "hash": "6303c8d78ff44fdbd74b823df72e8798540ca1f2f4d629dd85440213a0d08d7a"
+          },
+          {
+            "id": "document:5a6d2d240750c8cbd406",
+            "path": "docs/EN/README.md",
+            "hash": "6ee9c11b9c79a3211d21d0414bbbbff0206e1d94b534def346ab8c724c3ff2be"
+          },
+          {
+            "id": "document:d39eab03dd9a982acc78",
+            "path": "docs/EN/Retrieval_and_Context.md",
+            "hash": "597091b64865fc5a86bfdeecef667befe3415e91026cb4ec073dc8ca2f10bdb6"
+          }
+        ],
+        "sourceRefs": [
+          {
+            "path": "src/bin/mdgraph.ts",
+            "fingerprint": "3124bb2b6e43d1f9ddede11961d17b943e34e5608cbf5a116f476fdbdfb1ce22"
+          },
+          {
+            "path": "src/db/schema.sql",
+            "fingerprint": "867b54c07881b2d5cb63b5324aa606e930fcd1df3761046b5ab26792ffa77c20"
+          },
+          {
+            "path": "src/extraction/entity-extractor.ts",
+            "fingerprint": "7f2fd61117bb58675b37b0202024ba425f0d0ed2dde9dd3bfc9ae32c426eadb7"
+          },
+          {
+            "path": "src/indexer.ts",
+            "fingerprint": "12be75fc1d227ea30425be80864994f785a1ef740736eaa5c42f93d4b9b71db6"
+          },
+          {
+            "path": "src/query/context-builder.ts",
+            "fingerprint": "ac805485895168dfc775cdfab26767b7cc8b7f7037a742080d4ba62afab92ef0"
+          },
+          {
+            "path": "src/query/search.ts",
+            "fingerprint": "f58a41e8f6a6ff4df02e67d480eea346213a7e0cd8cc1a8a9b698e461c82ea3b"
+          },
+          {
+            "path": "src/semantic/ollama-provider.ts",
+            "fingerprint": "5b301a222f6f78c181f28a88de1776f5ca5cefacafeadbc6ce7ad272f6c5d0e0"
+          },
+          {
+            "path": "src/semantic/provider.ts",
+            "fingerprint": "cefcabd4d8309c02cd01130489f20b113595ddd65d407f4262002961d37ab252"
+          },
+          {
+            "path": "src/semantic/status.ts",
+            "fingerprint": "90884812620075a3c0c190dfd2f83fa5eb3b6ff7876f5aee5b9249a29d3d1399"
+          },
+          {
+            "path": "src/types.ts",
+            "fingerprint": "22c30bfa843fb9e875754e02c5f8ccfb02bc3ae26b1d3901060c28337be14be7"
+          },
+          {
+            "path": "src/watcher/file-watcher.ts",
+            "fingerprint": "61c8ba4452740c1e3ccfb46437c2175886bd4be7c0f8f1d5b87ec8450c32866c"
+          },
+          {
+            "path": "src/watcher/watch-health.ts",
+            "fingerprint": "b0276f49d7f23d86cb5f678a734fc8ff348e126d348624f74b667d8102ca7d37"
+          },
+          {
+            "path": "src/wiki/wiki-dependencies.ts",
+            "fingerprint": "5002d661b587acaf62b4ac0e36458c82a04755d64fa2929ee314c9b99b4fdbaf"
+          },
+          {
+            "path": "src/wiki/wiki-domains.ts",
+            "fingerprint": "1585e0411ccb0e0974a1bfbea4d6c02736948d3d36e4da5ab9ba83e79388ee5e"
+          },
+          {
+            "path": "src/wiki/wiki-evidence.ts",
+            "fingerprint": "b849dd69797d4652dc97b98d766381d679e2a718d2ff6d795062f6273bd63ba0"
+          }
+        ]
+      },
+      "gaps": []
+    },
+    {
+      "id": "reference",
+      "title": "Reference",
+      "path": "reference.md",
+      "parentId": "project-overview",
+      "purpose": "Collect stable command, MCP, configuration, API, and output contracts without duplicating implementation prose.",
+      "audience": "Users and tool authors who need exact public names, inputs, outputs, and compatibility boundaries.",
+      "outline": [
+        "CLI reference",
+        "MCP tools",
+        "Configuration",
+        "Output contracts",
+        "Compatibility status"
+      ],
+      "documentIds": [
+        "document:4c8106ea0d3b12529fd4",
+        "document:7d8640364f640c930cd9",
+        "document:6f9470c362ec8ecd31d4",
+        "document:58c1e7c0f7a50d9e9e17",
+        "document:8ef787cbcf51639c0cd8",
+        "document:5a6d2d240750c8cbd406",
+        "document:65e845912ccc3a26fef0",
+        "document:0a1b3f02e98407b82644",
+        "document:3b8753f801b69ad79a8f",
+        "document:63fb439259cb90867327",
+        "document:191a9050f50f5a821992",
+        "document:6d45106c2e1ac9d7b990"
+      ],
+      "sourceRefs": [
+        "src/bin/mdgraph.ts",
+        "src/db/repositories.ts",
+        "src/db/schema.sql",
+        "src/indexer.ts",
+        "src/mcp/tools.ts",
+        "src/query/context-builder.ts",
+        "src/query/knowledge-card.ts",
+        "src/query/structured-query-executor.ts",
+        "src/query/structured-query.ts",
+        "src/relationships/derive-related.ts",
+        "src/semantic/ollama-provider.ts",
+        "src/semantic/provider-registry.ts",
+        "src/semantic/provider.ts",
+        "src/types.ts",
+        "src/wiki/wiki-dependencies.ts",
+        "src/wiki/wiki-domains.ts",
+        "src/wiki/wiki-evidence.ts",
+        "src/wiki/wiki-plan.ts",
+        "src/wiki/wiki-status.ts"
+      ],
+      "evidenceQueries": [
+        "CLI MCP API configuration reference",
+        "public output contracts and compatibility"
+      ],
+      "evidenceHash": "c3ec2a257aed83db744060a6e3340634e92addbff4f1b2b7b58c4cc7a95f65a0",
+      "dependencySnapshot": {
+        "documents": [
+          {
+            "id": "document:4c8106ea0d3b12529fd4",
+            "path": "docs/EN/Output_Contracts.md",
+            "hash": "21a245c6435d8cce0b72dc5d6bd039dd22311354c25f1bcb226f1104acaf4f89"
+          },
+          {
+            "id": "document:7d8640364f640c930cd9",
+            "path": "docs/EN/Public_Contracts.md",
+            "hash": "6303c8d78ff44fdbd74b823df72e8798540ca1f2f4d629dd85440213a0d08d7a"
+          },
+          {
+            "id": "document:6f9470c362ec8ecd31d4",
+            "path": "docs/ZH/Public_Contracts.md",
+            "hash": "f559dea22ec4584033508717a5acc634791ca4735f7b709004a0a678552e2e78"
+          },
+          {
+            "id": "document:58c1e7c0f7a50d9e9e17",
+            "path": "docs/EN/Architecture.md",
+            "hash": "cdd3e9b0124dee65800a403e8e52cb263662a734415951bc9d4c55274889930c"
+          },
+          {
+            "id": "document:8ef787cbcf51639c0cd8",
+            "path": "docs/EN/Public_Contracts_1.0.md",
+            "hash": "98e9b6313a80edbe4143c374c1015fe0742268174e814a7cea11bacab7b7e881"
+          },
+          {
+            "id": "document:5a6d2d240750c8cbd406",
+            "path": "docs/EN/README.md",
+            "hash": "6ee9c11b9c79a3211d21d0414bbbbff0206e1d94b534def346ab8c724c3ff2be"
+          },
+          {
+            "id": "document:65e845912ccc3a26fef0",
+            "path": "docs/EN/Release_Checklist.md",
+            "hash": "265d716ce4b1b9192d861ed11db55623393dc2f1402ae773ca2a0da69a1baec4"
+          },
+          {
+            "id": "document:0a1b3f02e98407b82644",
+            "path": "docs/EN/Structured_Query_and_Relationships.md",
+            "hash": "ad0266a6785a5ec85ab9d80e91e168152d586f8042cad3bfb21770b004ca2281"
+          },
+          {
+            "id": "document:3b8753f801b69ad79a8f",
+            "path": "docs/ZH/Architecture.md",
+            "hash": "372fe46c268819cfd5572522a1f20ee95e6eed4060e215006f73cb8adc397b84"
+          },
+          {
+            "id": "document:63fb439259cb90867327",
+            "path": "docs/ZH/Output_Contracts.md",
+            "hash": "7375471ea192385829c20ab627610f19973c41a365106c23b387f3153154df36"
+          },
+          {
+            "id": "document:191a9050f50f5a821992",
+            "path": "docs/ZH/Public_Contracts_1.0.md",
+            "hash": "c18a5384c448e5e40dab9e881a5965db6e2b9676de91b273ffdba8125c654312"
+          },
+          {
+            "id": "document:6d45106c2e1ac9d7b990",
+            "path": "docs/ZH/README.md",
+            "hash": "8c5f2b87b3a6771a093a6dac530c58ae63815256cf8370728210a0ab6f7ce1bc"
+          }
+        ],
+        "sourceRefs": [
+          {
+            "path": "src/bin/mdgraph.ts",
+            "fingerprint": "3124bb2b6e43d1f9ddede11961d17b943e34e5608cbf5a116f476fdbdfb1ce22"
+          },
+          {
+            "path": "src/db/repositories.ts",
+            "fingerprint": "5790c38e471cd18c9786401df089334f53b10abd158e4bafe33e318869296163"
+          },
+          {
+            "path": "src/db/schema.sql",
+            "fingerprint": "867b54c07881b2d5cb63b5324aa606e930fcd1df3761046b5ab26792ffa77c20"
+          },
+          {
+            "path": "src/indexer.ts",
+            "fingerprint": "12be75fc1d227ea30425be80864994f785a1ef740736eaa5c42f93d4b9b71db6"
+          },
+          {
+            "path": "src/mcp/tools.ts",
+            "fingerprint": "f960448d7dae3f57995918d22b85399047bda4ad3cc7827eddaaceca200d74ec"
+          },
+          {
+            "path": "src/query/context-builder.ts",
+            "fingerprint": "ac805485895168dfc775cdfab26767b7cc8b7f7037a742080d4ba62afab92ef0"
+          },
+          {
+            "path": "src/query/knowledge-card.ts",
+            "fingerprint": "3c46ff820d5b58e9fa847fbc945dbc0ad855f421d0419c6b4e316fa2c6d25df9"
+          },
+          {
+            "path": "src/query/structured-query-executor.ts",
+            "fingerprint": "630e385e354b7e45a27068d6bd9eafd652df165da99c0800f2b088fc3cc3d41e"
+          },
+          {
+            "path": "src/query/structured-query.ts",
+            "fingerprint": "0f347c48c75a8fcbe310fb35047085fa79af03ab48a33422246c5c1b7f3e1d43"
+          },
+          {
+            "path": "src/relationships/derive-related.ts",
+            "fingerprint": "492dfdf5b07ff4ef3b7638d319ccd511a1ee169bca199c6ab9e3e7a8585a9988"
+          },
+          {
+            "path": "src/semantic/ollama-provider.ts",
+            "fingerprint": "5b301a222f6f78c181f28a88de1776f5ca5cefacafeadbc6ce7ad272f6c5d0e0"
+          },
+          {
+            "path": "src/semantic/provider-registry.ts",
+            "fingerprint": "3e2cba855ec7421c5ec4b55beb22f8c1f5f626ca4b25d779e79ffc0206d9bc0d"
+          },
+          {
+            "path": "src/semantic/provider.ts",
+            "fingerprint": "cefcabd4d8309c02cd01130489f20b113595ddd65d407f4262002961d37ab252"
+          },
+          {
+            "path": "src/types.ts",
+            "fingerprint": "22c30bfa843fb9e875754e02c5f8ccfb02bc3ae26b1d3901060c28337be14be7"
+          },
+          {
+            "path": "src/wiki/wiki-dependencies.ts",
+            "fingerprint": "5002d661b587acaf62b4ac0e36458c82a04755d64fa2929ee314c9b99b4fdbaf"
+          },
+          {
+            "path": "src/wiki/wiki-domains.ts",
+            "fingerprint": "1585e0411ccb0e0974a1bfbea4d6c02736948d3d36e4da5ab9ba83e79388ee5e"
+          },
+          {
+            "path": "src/wiki/wiki-evidence.ts",
+            "fingerprint": "b849dd69797d4652dc97b98d766381d679e2a718d2ff6d795062f6273bd63ba0"
+          },
+          {
+            "path": "src/wiki/wiki-plan.ts",
+            "fingerprint": "ccc2fda7880c9d000363a9ec4bc9e0d149677926fd4a7e4449274f44342ecbe3"
+          },
+          {
+            "path": "src/wiki/wiki-status.ts",
+            "fingerprint": "9fda23c20210d5b50f639b621f6f2ff11ef7e180275d525542be7df3f1d2dd22"
+          }
+        ]
+      },
+      "gaps": []
+    }
+  ],
+  "suggestions": {
+    "pages": [],
+    "sources": [
+      {
+        "pageId": "project-overview",
+        "documentIds": [
+          "document:7f254a7beff8008f7103",
+          "document:e88086c0a06bbc616f07",
+          "document:55f32a3f3e68c1c0326d"
+        ],
+        "sourceRefs": []
+      },
+      {
+        "pageId": "architecture",
+        "documentIds": [
+          "document:0319cf484f63a93e2cf1",
+          "document:f86376f234c2f0c5f825"
+        ],
+        "sourceRefs": []
+      },
+      {
+        "pageId": "core-workflows",
+        "documentIds": [
+          "document:1e6a3007f6e167ecdcde",
+          "document:55f32a3f3e68c1c0326d",
+          "document:69a08c1c5ece0db00859",
+          "document:8ef787cbcf51639c0cd8",
+          "document:5a6d2d240750c8cbd406",
+          "document:191a9050f50f5a821992",
+          "document:6d45106c2e1ac9d7b990",
+          "document:8f67f633956bd089da71"
+        ],
+        "sourceRefs": []
+      },
+      {
+        "pageId": "operations",
+        "documentIds": [
+          "document:0a1b3f02e98407b82644",
+          "document:925911c4612287bb8910",
+          "document:6d45106c2e1ac9d7b990",
+          "document:0319cf484f63a93e2cf1",
+          "document:f86376f234c2f0c5f825"
+        ],
+        "sourceRefs": [
+          "src/db/repositories.ts",
+          "src/query/structured-query-executor.ts",
+          "src/query/structured-query.ts",
+          "src/relationships/derive-related.ts"
+        ]
+      },
+      {
+        "pageId": "reference",
+        "documentIds": [
+          "document:0af6411942f24677ee24",
+          "document:e92601c8d33f2a6deec8"
+        ],
+        "sourceRefs": [
+          "src/query/search.ts",
+          "src/query/trace.ts"
+        ]
+      }
+    ]
+  },
+  "gaps": []
+}

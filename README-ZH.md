@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-22%2B%20with%20FTS5-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
 <a href="./README.md">English</a> · <a href="./docs/ZH/README.md">文档</a> · <a href="./docs/ZH/Architecture.md">架构说明</a> · <a href="./docs/ZH/Agent_Integration.md">Agent 集成</a> · <a href="./docs/ZH/Public_Contracts.md">公开契约</a>
@@ -136,6 +136,12 @@ mdgraph query --path /your/project 'type:adr AND status:accepted ORDER BY update
 mdgraph relationships derive --dry-run --json --path /your/project
 mdgraph relationships derive --threshold 0.86 --json --path /your/project
 
+# 实验性的用户维护 Wiki 工作流
+mdgraph wiki plan --out .mdgraph/wiki-plan.json --path /your/project
+mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path /your/project
+
 # Agent 友好的使用指引
 mdgraph usage --path /your/project
 ```
@@ -147,6 +153,10 @@ mdgraph usage --path /your/project
 实验性的 `query` 命令提供有界、参数化的文档治理 DSL，不改变 `search` 或五工具 MCP surface。
 
 实验性的 `relationships derive` 只会基于 fresh、完整的 semantic-model index，在独立 evidence 与 reciprocal-neighbor 门禁通过后创建低权重 `RELATED_TO` edge；它不会在 indexing 或 watch mode 中自动运行。两个实验性工作流均记录在[结构化查询与派生关系](./docs/ZH/Structured_Query_and_Relationships.md)。
+
+实验性的 `wiki` group 会确定性规划页面、准备有界证据 brief、报告更新影响，并验证维护字段、source 和相对链接。MDGraph 不生成或覆盖 Wiki 正文；宿主 Agent 工作流见 [Knowledge Card 与 Wiki 工作流](./docs/ZH/Knowledge_Cards_and_Wiki_Workflow.md)。
+
+更新已有 Wiki 计划时，使用 `mdgraph wiki plan --from <plan> --out <next-plan> --path <project>` 保留人工调整的页面。迁移 v1 计划时增加 `--wiki-dir wiki`。新计划使用 v2，新增页面和来源需审视后采纳。`current` 表示依赖一致，`wiki verify` 不判断正文是否正确。
 
 ---
 
@@ -222,7 +232,7 @@ mdgraph search --semantic --path /your/project "authentication login"
 
 ## 环境要求
 
-- Node.js `>=22.5.0`
+- Node.js `>=22.5.0`，且内置 `node:sqlite` 启用了 FTS5。已验证 22.23.2 和 26.5.0；仅满足版本号不保证具备 FTS5，请使用当前 Node 22 或更新发行版。
 - Node 内置 `node:sqlite` 支持
 - 本地项目目录中的 Markdown 文件
 

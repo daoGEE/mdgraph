@@ -89,3 +89,23 @@ Derived `RELATED_TO` edges are disposable, non-authoritative state. Changes to a
 - Keep `.mdgraph/config.json` trackable when it contains no credentials; endpoint URLs with embedded credentials are rejected.
 - Use GraphJSON for the documented structural exchange format instead of depending on SQLite internals.
 - Before publishing MDGraph itself, run the [Release Checklist](Release_Checklist.md), inspect `npm pack --dry-run --json`, and verify the packed package rather than assuming repository contents equal npm contents.
+
+## Served roots and embedding deadlines
+
+MCP checks the real filesystem targets of project roots, configuration, and SQLite storage. Links within the served root remain usable, including starting the server through a linked root. To access an external project, start a separate server with `--path` pointing to that project. A link inside the served root does not grant access to an external target.
+
+`embedding.timeoutMs` covers response headers and the complete response body, including error responses. A timeout degrades search/context to lexical and graph retrieval; an indexing failure preserves the previous graph. Retry after the local service recovers.
+
+## Incremental consistency and watch configuration
+
+Indexing records extraction settings and a generation in SQLite metadata. Changes to extraction settings rebuild the affected graph; query-only settings do not. Incremental updates reconcile deterministic relationships against all parsed documents so alias ambiguity changes are reflected even in untouched documents. Unchanged chunk vectors are reused for matching provider/model/dimensions and content. An explicit full rebuild clears derived relationships; automatic extraction rebuilds preserve unaffected derived relationships when their vector profile is unchanged.
+
+Concurrent index commits detect a changed generation and rescan once; repeated contention reports an error and can be retried. Parser failures retain the previous document and its graph, report skipped files, and leave incomplete extraction rebuilds pending. Fix the reported Markdown and rerun indexing before relying on that content.
+
+Watch reloads configuration and `.gitignore` rules, including the MDX switch. The replacement watcher becomes ready before the old one closes. Invalid configuration retains the old watch and reports degraded health; correcting the configuration triggers recovery.
+
+## Node.js build requirements
+
+The runtime must provide `node:sqlite` with FTS5; a version number of 22.5.0 alone is insufficient. Node 22.23.2 and 26.5.0 pass the full local test suite. Tested stock 22.5.0 and 22.13.0 builds lack FTS5; adding the experimental SQLite flag alone does not supply it. MDGraph checks the actual capability before applying its persistent schema and reports `sqlite_fts5_unavailable` with upgrade guidance. A build that supplies FTS5 through an extension remains usable.
+
+The early-runtime CI job exercises SQLite compatibility and missing-capability recovery; it is not a full-product support claim for stock Node 22.5.0. Windows validation is covered by CI and must be checked on the corresponding commit before a cross-platform release claim.

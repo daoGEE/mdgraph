@@ -15,6 +15,7 @@ Use this checklist before publishing an MDGraph release or asking a maintainer t
 - Confirm focused contract tests cover MCP tool definitions, representative JSON fields, edge kinds, doctor warning shape, config defaults, and schema compatibility guidance.
 - Confirm structured error outputs include a stable `code` and remediation where the command already returns structured errors.
 - Confirm experimental commands remain explicitly labeled in the guides, public ledger, output contracts, and release notes.
+- Confirm `wiki status` and `wiki verify` remain read-only, every non-current page/issue has recovery guidance, and the five-tool MCP surface is unchanged.
 
 ## Evidence gate
 

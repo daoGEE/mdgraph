@@ -24,6 +24,7 @@ import {
   type ContextPackingStrategy
 } from "../query/context-builder.js";
 import { explainSearchGraph, explainSearchGraphAsync, searchGraph } from "../query/search.js";
+import { buildKnowledgeCard, formatKnowledgeCard, type KnowledgeCard } from "../query/knowledge-card.js";
 import { traceNodes } from "../query/trace.js";
 import { executeStructuredQuery, type StructuredQueryResult } from "../query/structured-query-executor.js";
 import {
@@ -35,6 +36,20 @@ import { semanticStatusReportAsync, type SemanticStatusReport } from "../semanti
 import type { SearchQueryMode } from "../types.js";
 import { packageVersion } from "../version.js";
 import { watchProject } from "../watcher/file-watcher.js";
+import {
+  buildWikiPageBrief,
+  buildWikiPlan,
+  formatWikiPageBrief,
+  formatWikiPlan,
+  readWikiPlan,
+  writeWikiPlan
+} from "../wiki/wiki-plan.js";
+import {
+  buildWikiStatus,
+  formatWikiStatus,
+  formatWikiVerification,
+  verifyWiki
+} from "../wiki/wiki-status.js";
 
 const program = new Command();
 
@@ -202,7 +217,8 @@ program
     const repository = openRepository(projectRootFromOption(options.path));
     try {
       const resolution = repository.resolveNodeDetailed(query);
-      printResult(options.json, nodeResolutionJson(resolution), formatNodeResolution(resolution));
+      const card = resolution.status === "found" ? buildKnowledgeCard(repository, resolution.node) : undefined;
+      printResult(options.json, nodeResolutionJson(resolution, card), formatNodeResolution(resolution, card));
     } finally {
       closeRepository(repository);
     }
@@ -308,6 +324,101 @@ relationshipsCommand
         dryRun: options.dryRun
       });
       printResult(options.json, report, formatDerivedRelationships(report));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+const wikiCommand = program
+  .command("wiki")
+  .description("Plan, brief, inspect, and verify a user-maintained project Wiki");
+
+wikiCommand
+  .command("plan")
+  .description("Create a deterministic WikiPlan without generating page prose")
+  .requiredOption("--out <file>", "WikiPlan JSON output path")
+  .option("--from <file>", "Preserve authored pages from an existing plan and suggest new evidence")
+  .option("--wiki-dir <dir>", "Project-relative Wiki output directory (required when migrating a v1 plan)")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((options: { out: string; from?: string; wikiDir?: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const out = resolveProjectArtifactPath(projectRoot, options.out);
+    const fromPath = options.from ? resolveProjectArtifactPath(projectRoot, options.from) : undefined;
+    if (fromPath && out === fromPath) {
+      throw new Error("Choose a different --out path when updating a plan with --from; review the new plan before replacing the original.");
+    }
+    const from = fromPath ? readWikiPlan(fromPath) : undefined;
+    const repository = openRepository(projectRoot);
+    try {
+      const plan = buildWikiPlan(projectRoot, repository, { from, wikiDir: options.wikiDir });
+      writeWikiPlan(out, plan);
+      printResult(options.json, { out, plan }, [`Wrote Wiki plan: ${out}`, formatWikiPlan(plan)].join("\n"));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("brief")
+  .description("Build an evidence-bounded brief for one planned Wiki page")
+  .argument("<page-id>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--max-chars <number>", "Maximum context and Knowledge Card characters", parseInteger)
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((pageId: string, options: { plan: string; json?: boolean; maxChars?: number; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const config = loadConfig(projectRoot);
+    const repository = openRepository(projectRoot);
+    try {
+      const brief = buildWikiPageBrief(projectRoot, repository, config, plan, pageId, { maxChars: options.maxChars });
+      printResult(options.json, brief, formatWikiPageBrief(brief));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("status")
+  .description("Report current, needs-update, missing, and orphaned Wiki pages without modifying them")
+  .argument("<wiki-dir>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((wikiDir: string, options: { plan: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const repository = openRepository(projectRoot);
+    try {
+      const status = buildWikiStatus(projectRoot, repository, resolveProjectArtifactPath(projectRoot, wikiDir), plan, { planPath });
+      printResult(options.json, status, formatWikiStatus(status));
+    } finally {
+      closeRepository(repository);
+    }
+  });
+
+wikiCommand
+  .command("verify")
+  .description("Verify Wiki plan, maintenance fields, source paths, evidence freshness, and relative links")
+  .argument("<wiki-dir>")
+  .requiredOption("--plan <file>", "WikiPlan JSON path")
+  .option("--json", "Print JSON output")
+  .option("--path <path>", "Project root. Defaults to the current working directory")
+  .action((wikiDir: string, options: { plan: string; json?: boolean; path?: string }) => {
+    const projectRoot = projectRootFromOption(options.path);
+    const planPath = resolveProjectArtifactPath(projectRoot, options.plan);
+    const plan = readWikiPlan(planPath);
+    const repository = openRepository(projectRoot);
+    try {
+      const verification = verifyWiki(projectRoot, repository, resolveProjectArtifactPath(projectRoot, wikiDir), plan, { planPath });
+      printResult(options.json, verification, formatWikiVerification(verification));
+      if (!verification.valid) {
+        process.exitCode = 1;
+      }
     } finally {
       closeRepository(repository);
     }
@@ -680,6 +791,17 @@ function buildUsageGuide(projectRoot: string): UsageGuide {
         ]
       },
       {
+        name: "Wiki Maintenance",
+        purpose: "Plan and maintain a user-authored project Wiki from deterministic evidence without generating prose inside MDGraph.",
+        commands: [
+          `mdgraph wiki plan --out .mdgraph/wiki-plan.json --path ${project}`,
+          `mdgraph wiki brief architecture --plan .mdgraph/wiki-plan.json --json --path ${project}`,
+          `mdgraph wiki status wiki --plan .mdgraph/wiki-plan.json --json --path ${project}`,
+          `mdgraph wiki verify wiki --plan .mdgraph/wiki-plan.json --json --path ${project}`
+        ],
+        notes: ["Status and verify are read-only; the host agent writes pages and preserves user-authored prose."]
+      },
+      {
         name: "CI And Artifacts",
         purpose: "Produce reproducible graph reports and interoperability artifacts.",
         commands: [
@@ -735,6 +857,10 @@ function shellPath(value: string): string {
 
 function projectRootFromOption(projectRoot: string | undefined): string {
   return validateProjectRoot(projectRoot ?? process.cwd());
+}
+
+function resolveProjectArtifactPath(projectRoot: string, artifactPath: string): string {
+  return path.isAbsolute(artifactPath) ? path.resolve(artifactPath) : path.resolve(projectRoot, artifactPath);
 }
 
 function formatIndexResult(result: IndexResult): string {
@@ -832,7 +958,8 @@ function formatContext(context: ReturnType<typeof buildContext>): string {
     .map((item, index) => {
       const heading = item.heading ? `# ${item.heading}` : item.title;
       const lines = item.lines ? `:${item.lines.start}` : "";
-      return `## ${index + 1}. ${item.path}${lines}\nReason: ${item.reason}\n${heading}\n${item.content}`;
+      const cardSummary = item.cardSummary ? `\nKnowledge Card: ${item.cardSummary}` : "";
+      return `## ${index + 1}. ${item.path}${lines}\nReason: ${item.reason}${cardSummary}\n${heading}\n${item.content}`;
     })
     .join("\n\n");
   if (!context.debug) {
@@ -913,6 +1040,8 @@ function formatEvaluationReport(report: ReturnType<typeof evaluateRetrieval>): s
         `${result.id}: ${status}`,
         `  query: ${result.query}`,
         `  topKDocumentRecall=${formatMetric(result.metrics.topKDocumentRecall)}, expectedSectionRecall=${formatMetric(result.metrics.expectedSectionRecall)}, contextPrecision=${formatMetric(result.metrics.contextPrecision)}, contextDiversity=${formatMetric(result.metrics.contextDiversity)}`,
+        `  retrievedEntityRecall=${formatMetric(result.metrics.retrievedEntityRecall)}, retrievedSourceRefRecall=${formatMetric(result.metrics.retrievedSourceRefRecall)}, retrievedEdgeKindCoverage=${formatMetric(result.metrics.retrievedEdgeKindCoverage)}, evidencePassed=${result.retrievalEvidencePassed}`,
+        `  contextIrrelevantRatio=${formatMetric(result.metrics.contextIrrelevantRatio)}`,
         `  traceSuccess=${result.metrics.traceSuccess ?? "n/a"}, returnedChars=${result.metrics.returnedChars}, budgetFit=${result.metrics.budgetFit}`
       ].join("\n");
     })
@@ -996,9 +1125,9 @@ function formatMetric(value: number): string {
   return value.toFixed(2);
 }
 
-function nodeResolutionJson(resolution: NodeResolution): unknown {
+function nodeResolutionJson(resolution: NodeResolution, card?: KnowledgeCard): unknown {
   if (resolution.status === "found") {
-    return resolution.node;
+    return card ? { ...resolution.node, card } : resolution.node;
   }
   if (resolution.status === "ambiguous") {
     return { error: resolution.error, query: resolution.query, candidates: resolution.candidates };
@@ -1006,9 +1135,12 @@ function nodeResolutionJson(resolution: NodeResolution): unknown {
   return { error: resolution.error, query: resolution.query };
 }
 
-function formatNodeResolution(resolution: NodeResolution): string {
+function formatNodeResolution(resolution: NodeResolution, card?: KnowledgeCard): string {
   if (resolution.status === "found") {
-    return `${resolution.node.kind}: ${resolution.node.label}`;
+    return [
+      `${resolution.node.kind}: ${resolution.node.label}`,
+      card ? formatKnowledgeCard(card) : ""
+    ].filter(Boolean).join("\n\n");
   }
   if (resolution.status === "ambiguous") {
     const candidates = resolution.candidates

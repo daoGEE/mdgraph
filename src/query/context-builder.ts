@@ -4,8 +4,10 @@ import { explainSearchGraphAsync, searchGraph, type SearchOptions } from "./sear
 import type { EmbeddingDiagnostic } from "../semantic/provider.js";
 import { scanContentRiskLines } from "../utils/content-risk.js";
 import { normalizePath, uniqueStrings } from "../utils/text.js";
+import { createKnowledgeCardBuilder } from "./knowledge-card.js";
 
 const DEFAULT_MAX_CONTEXT_NODES = 16;
+const DEFAULT_MAX_CONTEXT_CARD_SUMMARIES = 4;
 export const CONTEXT_PACKING_STRATEGY = "mmr-style-document-round-robin" as const;
 export const CONTEXT_PACKING_STRATEGIES = [CONTEXT_PACKING_STRATEGY, "mmr"] as const;
 export type ContextPackingStrategy = typeof CONTEXT_PACKING_STRATEGIES[number];
@@ -26,6 +28,7 @@ export interface ContextItem {
   edgePath?: ContextEdgePathStep[];
   sourceRefs?: ContextSourceRef[];
   riskNotes?: string[];
+  cardSummary?: string;
   content: string;
 }
 
@@ -593,13 +596,16 @@ function packContext(
     });
   }
 
+  const withCardSummaries = addContextCardSummaries(repository, items, maxChars - usedChars);
+  usedChars += withCardSummaries.usedChars;
+
   return {
     result: {
       query,
       maxChars,
       usedChars,
       mode,
-      items,
+      items: withCardSummaries.items,
       packing: {
         strategy: packingStrategy,
         similarity: ranking.packingSimilarity,
@@ -615,6 +621,36 @@ function packContext(
     budgetSkippedItems,
     redundancySkippedItems: ranking.redundancySkippedItems
   };
+}
+
+function addContextCardSummaries(
+  repository: GraphRepository,
+  items: ContextItem[],
+  availableChars: number
+): { items: ContextItem[]; usedChars: number } {
+  if (availableChars < 32 || !items.length) {
+    return { items, usedChars: 0 };
+  }
+  const builder = createKnowledgeCardBuilder(repository);
+  let remaining = availableChars;
+  let added = 0;
+  const enriched = items.map((item) => {
+    if (added >= DEFAULT_MAX_CONTEXT_CARD_SUMMARIES || remaining < 32) {
+      return item;
+    }
+    const card = builder.build(item.nodeId);
+    if (!card) {
+      return item;
+    }
+    const cardSummary = card.summary;
+    if (cardSummary.length < 32 || cardSummary.length > remaining || cardSummary.endsWith("…")) {
+      return item;
+    }
+    remaining -= cardSummary.length;
+    added += 1;
+    return { ...item, cardSummary };
+  });
+  return { items: enriched, usedChars: availableChars - remaining };
 }
 
 interface MmrRanking {

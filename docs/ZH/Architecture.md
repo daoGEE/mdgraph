@@ -14,6 +14,7 @@ MDGraph 采用以下已实现的流水线：扫描器 → 解析器 → 提取/�
 | 解析 | `src/resolution/link-resolver.ts` | 将 Markdown 和 WikiLink 目标解析为已索引的文档或章节。 |
 | 存储 | `src/db/*` | SQLite 连接、模式、记录替换、增量更新、图查询和存储诊断。 |
 | 查询 | `src/query/*` | 搜索排序、上下文打包、图追踪，以及实验性结构化查询 tokenizer/AST/executor。 |
+| Wiki | `src/wiki/*` | 实验性的确定性 Wiki 规划、证据 brief、影响状态和只读验证；正文继续由宿主 Agent/用户维护。 |
 | 评估 | `src/evaluation/*` | 检索评估 case、期望记录，以及 search/context/trace 质量的轻量指标。 |
 | Benchmark | `src/benchmark/*` | 结构化 with/without-MDGraph agent run record 解析和 paired delta 聚合。 |
 | Bundle | `src/bundle/*` | 基于 schema/source/config/document hashes 的私有目录图 bundle 创建和校验。 |
@@ -126,6 +127,12 @@ Diff report 包含 Markdown 文档新增、修改、删除、Git 识别的 renam
 
 `traceNodes` 在执行节点之间的有界图遍历，并返回每一步的边类型、来源和置信度。
 
+## Wiki 工作流
+
+实验性 Wiki 路径与 indexing 和自然语言 query ranking 分离。`buildWikiPlan` 只根据已索引文档 metadata 与显式图关系选择有证据的页面域，记录 graph/source hash，并为每页生成依赖局部 `evidenceHash`；该 hash 也会指纹化安全的项目 source ref。`buildWikiPageBrief` 复用 context packing、known files、Knowledge Card 和共享字符预算。
+
+`buildWikiStatus` 将用户维护页面的 front matter 与 plan 及当前依赖证据比较，只报告 `current`、`needs_update`、`missing` 或 `orphaned`，不修改文件。`verifyWiki` 增加有界检查，覆盖 plan 形状、已索引 source document、安全且存在的 source ref、evidence freshness 和可解析的相对 Markdown link。它不评判正文质量、不删除 orphaned 页面、不调用模型，也不增加 MCP 工具。
+
 ## MCP 边界
 
 MCP 服务器有意仅暴露五个工具。Search/context 通过 provider-aware 异步 handler 调度，node/trace/status 保留同步行为。工具输出以文本为主且兼容 JSON，以便代理可以直接使用，无需先检查 SQLite 数据库或读取原始文件。semantic 降级会增加文本提示和结构化诊断，但不会把仍然可用的 lexical/graph 结果变成 MCP error。服务器会绑定到项目根：initialize root 和工具 `projectPath` 必须位于服务根之内。
@@ -142,3 +149,7 @@ MCP 服务器有意仅暴露五个工具。Search/context 通过 provider-aware 
 - 互操作 adapter 是只读导向的。GraphJSON verify、Mermaid/Markdown/docs-site export 和 source bridge report 不会把外部 graph 合并进主 SQLite index。
 - `RELATED_TO` 是实验性派生 edge，只能由显式、provider-gated 的流程发射，普通确定性 indexing 永远不会发射它。`SAME_AS` 和 `CONTRADICTS` 继续保留；类似矛盾的信号仍由 `doctor` 报告，而不是作为 graph edge 插入。
 - 当前实现优先考虑紧凑、确定性的核心，而非广泛的 Markdown/MDX 方言支持。
+
+## Knowledge 与 Wiki 的证据归属
+
+Card 将直接边、文档或章节的继承背景、关联源码依据分开表达，引用和阅读建议保留稳定来源信息。`src/wiki/wiki-evidence.ts` 负责 Wiki 证据哈希与严格内容检查，`src/wiki/wiki-dependencies.ts` 的依赖评估同时驱动 Brief 写作指引和页面状态。Plan v2 保留人工选择，将新建议单独列出；文档来源哈希排除 Wiki 输出及变化的索引时间。数据库结构和检索排名保持不变。

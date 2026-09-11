@@ -74,6 +74,10 @@ the frozen 1.0 CLI inventory above. Its bounded DSL and JSON output are document
 `relationships derive` is experimental and is also outside the
 frozen inventory. Its provider/evidence gates and JSON output are documented in
 [Structured Query and Relationships](Structured_Query_and_Relationships.md#derived-related-document-relationships) and Output Contracts.
+
+`wiki plan/brief/status/verify` is an experimental post-freeze CLI group. It adds no
+MCP tools, does not generate prose, and is documented in
+[Knowledge Cards and Wiki Workflow](Knowledge_Cards_and_Wiki_Workflow.md) and Output Contracts.
 The stable `search` command and five-tool MCP surface are unchanged.
 
 Project-related commands accept an additive `--path <project>` flag so

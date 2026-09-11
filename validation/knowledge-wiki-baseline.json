@@ -1,0 +1,144 @@
+{
+  "date": "2026-09-11",
+  "baselineCommit": "9cf7a05",
+  "candidateBaseCommit": "f4dddce",
+  "candidateIncludes": "Stage 5 source-reference ownership and path-only next-read corrections",
+  "runtime": "v26.5.0",
+  "platform": "darwin arm64",
+  "methodology": "Deterministic orchard-project fixture; next-read rank and association coverage measure output behavior, not independent agent accuracy or completion time. Null rank means no matching next-read entry. Timings are single local samples.",
+  "cards": [
+    {
+      "target": "docs/architecture.md#timing",
+      "before": {
+        "chars": 2308,
+        "firstCorrectNextReadRank": null,
+        "definitionsWithoutAssociation": 2,
+        "sourceRefsWithoutAssociation": 1
+      },
+      "after": {
+        "chars": 2946,
+        "firstCorrectNextReadRank": 1,
+        "definitionsWithoutAssociation": 0,
+        "sourceRefsWithoutAssociation": 0
+      }
+    },
+    {
+      "target": "OrchardScheduler",
+      "before": {
+        "chars": 1002,
+        "firstCorrectNextReadRank": null,
+        "definitionsWithoutAssociation": 1,
+        "sourceRefsWithoutAssociation": 1
+      },
+      "after": {
+        "chars": 2298,
+        "firstCorrectNextReadRank": 1,
+        "definitionsWithoutAssociation": 0,
+        "sourceRefsWithoutAssociation": 0
+      }
+    },
+    {
+      "target": "src/scheduler.ts",
+      "before": {
+        "chars": 816,
+        "firstCorrectNextReadRank": null,
+        "definitionsWithoutAssociation": 0,
+        "sourceRefsWithoutAssociation": 1
+      },
+      "after": {
+        "chars": 1816,
+        "firstCorrectNextReadRank": 1,
+        "definitionsWithoutAssociation": 0,
+        "sourceRefsWithoutAssociation": 0
+      }
+    }
+  ],
+  "performance": {
+    "methodology": "Synthetic two-section documents; local-hash vectors; one warmup and five query samples; memory is process memory after operations, not peak allocation.",
+    "before": [
+      {
+        "documents": 100,
+        "counts": {
+          "documents": 100,
+          "sections": 200,
+          "entities": 101,
+          "sourceRefs": 0,
+          "edges": 600,
+          "chunks": 200,
+          "vectors": 200
+        },
+        "fullIndexMs": 101.86,
+        "incrementalIndexMs": 48.77,
+        "cardMedianMs": 2.23,
+        "contextMedianMs": 10.8,
+        "semanticSearchMedianMs": 3.76,
+        "heapUsedBytes": 23367536,
+        "rssBytes": 106758144
+      },
+      {
+        "documents": 500,
+        "counts": {
+          "documents": 500,
+          "sections": 1000,
+          "entities": 501,
+          "sourceRefs": 0,
+          "edges": 3000,
+          "chunks": 1000,
+          "vectors": 1000
+        },
+        "fullIndexMs": 243.27,
+        "incrementalIndexMs": 166.29,
+        "cardMedianMs": 10.71,
+        "contextMedianMs": 25.6,
+        "semanticSearchMedianMs": 18.71,
+        "heapUsedBytes": 49065696,
+        "rssBytes": 187908096
+      }
+    ],
+    "after": [
+      {
+        "documents": 100,
+        "counts": {
+          "documents": 100,
+          "sections": 200,
+          "entities": 101,
+          "sourceRefs": 0,
+          "edges": 600,
+          "chunks": 200,
+          "vectors": 200
+        },
+        "fullIndexMs": 91.19,
+        "incrementalIndexMs": 43.34,
+        "cardMedianMs": 2.04,
+        "contextMedianMs": 10.01,
+        "semanticSearchMedianMs": 3.78,
+        "heapUsedBytes": 23539504,
+        "rssBytes": 106823680
+      },
+      {
+        "documents": 500,
+        "counts": {
+          "documents": 500,
+          "sections": 1000,
+          "entities": 501,
+          "sourceRefs": 0,
+          "edges": 3000,
+          "chunks": 1000,
+          "vectors": 1000
+        },
+        "fullIndexMs": 223.64,
+        "incrementalIndexMs": 140.08,
+        "cardMedianMs": 9.38,
+        "contextMedianMs": 24.93,
+        "semanticSearchMedianMs": 16.66,
+        "heapUsedBytes": 49074248,
+        "rssBytes": 190939136
+      }
+    ]
+  },
+  "limitations": [
+    "Synthetic fixture output behavior only; no independent agent trial",
+    "Single local performance run with five query samples; not a throughput guarantee",
+    "No Windows or remote CI execution in this local validation"
+  ]
+}

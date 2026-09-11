@@ -10,7 +10,10 @@ import { createFixtureDocs } from "./fixtures.js";
 interface NodeToolStructuredContent {
   error?: string;
   candidates?: unknown[];
-  node?: { data: { anchor?: string } };
+  node?: {
+    data: { anchor?: string };
+    card?: { kind: string; summary: string; definitions: unknown[]; evidence: unknown[] };
+  };
 }
 
 interface ContextToolStructuredContent {
@@ -84,7 +87,11 @@ describe("ToolHandler", () => {
     expect(handler.execute("mdgraph_status").content[0].text).toContain("active");
     expect(handler.execute("mdgraph_search", { query: "AuthService" }).content[0].text).toContain("auth-v2-design.md");
     expect(handler.execute("mdgraph_context", { query: "RedisTimeoutError login" }).content[0].text).toContain("Context for");
-    expect(handler.execute("mdgraph_node", { query: "AuthService" }).content[0].text).toContain("entity: AuthService");
+    const node = handler.execute("mdgraph_node", { query: "AuthService" });
+    const nodeContent = node.structuredContent as NodeToolStructuredContent;
+    expect(node.content[0].text).toContain("entity: AuthService");
+    expect(node.content[0].text).toContain("Knowledge Card (experimental)");
+    expect(nodeContent.node?.card).toMatchObject({ kind: "entity", summary: expect.stringContaining("AuthService") });
     expect(handler.execute("mdgraph_trace", { from: "AuthService", to: "RedisTimeoutError" }).content[0].text).toContain("Trace:");
   });
 

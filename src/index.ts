@@ -32,6 +32,23 @@ export type {
   ContextPackingStrategy,
   ContextResult
 } from "./query/context-builder.js";
+export {
+  DEFAULT_KNOWLEDGE_CARD_LIMITS,
+  buildKnowledgeCard,
+  createKnowledgeCardBuilder,
+  formatKnowledgeCard
+} from "./query/knowledge-card.js";
+export type {
+  CardAssociation,
+  CardNextRead,
+  CardEvidence,
+  CardReference,
+  CardSourceReference,
+  KnowledgeCard,
+  KnowledgeCardBuilder,
+  KnowledgeCardNodeKind,
+  KnowledgeCardOptions
+} from "./query/knowledge-card.js";
 export { explainSearchGraph, explainSearchGraphAsync, searchGraph, searchGraphAsync } from "./query/search.js";
 export { traceNodes } from "./query/trace.js";
 export { executeStructuredQuery, StructuredQueryExecutionError } from "./query/structured-query-executor.js";
@@ -95,4 +112,57 @@ export { decodeFloat32Vector, encodeFloat32Vector } from "./semantic/vector-code
 export { watchProject } from "./watcher/file-watcher.js";
 export type { WatchHandle, WatchProjectOptions } from "./watcher/file-watcher.js";
 export type { WatchFailureCode, WatchFailurePhase, WatchHealthError, WatchHealthSnapshot, WatchHealthState } from "./watcher/watch-health.js";
+export {
+  WIKI_PAGE_BRIEF_FORMAT,
+  WIKI_PAGE_BRIEF_FORMAT_VERSION,
+  WIKI_PLAN_FORMAT,
+  WIKI_PLAN_FORMAT_VERSION,
+  WikiPlanError,
+  buildWikiPageBrief,
+  buildWikiPlan,
+  calculateWikiPageEvidenceHash,
+  formatWikiPageBrief,
+  formatWikiPlan,
+  readWikiPlan,
+  safeProjectRelativePath,
+  safeWikiPagePath,
+  sourceRefFingerprint,
+  stableWikiPlan,
+  validateWikiPlan,
+  writeWikiPlan,
+  wikiSourceHash
+} from "./wiki/wiki-plan.js";
+export type {
+  WikiBriefSourceDocument,
+  WikiBriefOptions,
+  WikiPageBrief,
+  WikiPlan,
+  WikiPlanOptions,
+  WikiPlanSuggestions,
+  WikiPlanGap,
+  WikiDependencySnapshot,
+  WikiPlanPage,
+  WikiStrictFreshness
+} from "./wiki/wiki-plan.js";
+export {
+  WIKI_STATUS_FORMAT,
+  WIKI_STATUS_FORMAT_VERSION,
+  WIKI_VERIFICATION_FORMAT,
+  WIKI_VERIFICATION_FORMAT_VERSION,
+  buildWikiStatus,
+  formatWikiStatus,
+  formatWikiVerification,
+  verifyWiki
+} from "./wiki/wiki-status.js";
+
+export type { WikiDependencyAssessment, WikiDependencyChange } from "./wiki/wiki-dependencies.js";
+export type {
+  WikiPageState,
+  WikiPageStatus,
+  WikiPlanStatus,
+  WikiStatus,
+  WikiStatusOptions,
+  WikiVerification,
+  WikiVerificationIssue
+} from "./wiki/wiki-status.js";
 export * from "./types.js";

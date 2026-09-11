@@ -82,3 +82,17 @@ For each question, compare agent behavior with and without MDGraph attached:
 - `mdgraph eval` ranking report: query mode, RRF search fusion channels, compatibility context packing strategy, optional reranker status, and semantic-active case count. Use the focused context regression suite to compare opt-in true MMR against that frozen default.
 
 Use `mdgraph report --benchmark benchmark-runs.json --json` for A/B reporting on these questions. It consumes structured run records and reports aggregate deltas; full transcripts should remain outside public docs.
+
+## Returned evidence and compatibility metrics
+
+The legacy `entityRecall`, `sourceRefRecall`, and `edgeKindCoverage` metrics measure existence in the index (and trace for edge kinds). Their meaning and the legacy `passed` result remain unchanged. They do not establish that a query returned the evidence.
+
+Use `retrievedEntityRecall`, `retrievedSourceRefRecall`, and `retrievedEdgeKindCoverage` to measure evidence exposed by search, context, and the requested trace. `observed.retrievedEntities`, `retrievedSourceRefs`, and `retrievedEdgeKinds` identify that evidence. `retrievalEvidencePassed` requires both the legacy checks and complete returned-evidence coverage. `contextIrrelevantRatio` measures the fraction of returned context items outside the expected document set; an empty result has ratio zero but cannot establish recall.
+
+## Reproducible performance samples
+
+Run `npm run baseline:performance -- 100,500` after installing dependencies. The script creates independent synthetic document corpora, indexes local-hash vectors, modifies one document, and measures full/incremental indexing plus card, context, and semantic-query latency. Query values are medians of five samples following one warmup. Memory values are process heap/RSS after the operations, not peak allocation. The JSON includes runtime, platform, corpus sizes, counts, and retained fixture paths. These measurements are reproducible engineering samples, not real-agent effectiveness or large-production performance claims.
+
+## Knowledge/Wiki output baseline
+
+Run `npm run baseline:knowledge-wiki` for a deterministic orchard-project fixture. It reports Card JSON characters, references lacking ownership labels, and the rank of a known file in next-read entries. A null rank means the output has no matching next-read entry; it does not mean search failed. The plan/brief output checks project-neutral planning and evidence routing. This is an output-behavior comparison, not a measured independent-agent completion-time or prose-quality improvement.

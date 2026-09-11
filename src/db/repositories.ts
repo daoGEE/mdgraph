@@ -32,6 +32,18 @@ export interface StatusCounts {
   vectors: number;
 }
 
+export interface IndexWriteState {
+  expectedGeneration?: number;
+  extractionFingerprint?: string;
+}
+
+export class IndexGenerationConflict extends Error {
+  constructor() {
+    super("The index changed while this scan was running.");
+    this.name = "IndexGenerationConflict";
+  }
+}
+
 export interface StorageObjectStat {
   name: string;
   type: string;
@@ -96,6 +108,10 @@ export interface ChunkSearchRow {
   section?: GraphSection;
   chunk: GraphChunk;
   rank: number;
+}
+
+export interface EntityDefinitionSearchRow extends ChunkSearchRow {
+  entityId: string;
 }
 
 export interface NodeRecord {
@@ -164,24 +180,44 @@ export class GraphRepository {
     this.db.close();
   }
 
-  replaceAll(records: GraphRecordSet): void {
+  indexWriteState(): { extractionFingerprint?: string; generation: number } {
+    const rows = this.db.prepare("SELECT key, value FROM schema_metadata WHERE key IN ('index_extraction_fingerprint', 'index_generation')").all() as Array<{ key: string; value: string }>;
+    const values = new Map(rows.map((row) => [row.key, row.value]));
+    const generation = Number(values.get("index_generation") ?? "0");
+    return {
+      extractionFingerprint: values.get("index_extraction_fingerprint"),
+      generation: Number.isSafeInteger(generation) && generation >= 0 ? generation : 0
+    };
+  }
+
+  replaceAll(records: GraphRecordSet, state?: IndexWriteState): void {
     const write = this.db.transaction(() => {
+      this.assertExpectedGeneration(state?.expectedGeneration);
       this.db.exec("DELETE FROM chunks_fts; DELETE FROM chunk_vectors; DELETE FROM edges; DELETE FROM chunks; DELETE FROM source_refs; DELETE FROM entities; DELETE FROM sections; DELETE FROM documents;");
       this.insertRecords(records, "strict");
+      this.writeIndexState(state);
     });
 
     write();
     this.compactStorage({ vacuum: true });
   }
 
-  replaceDocuments(records: GraphRecordSet, changedDocumentIds: string[], deletedDocumentIds: string[]): void {
+  replaceDocuments(records: GraphRecordSet, changedDocumentIds: string[], deletedDocumentIds: string[], canonical?: GraphRecordSet, state?: IndexWriteState): void {
     const write = this.db.transaction(() => {
+      this.assertExpectedGeneration(state?.expectedGeneration);
       for (const documentId of [...changedDocumentIds, ...deletedDocumentIds]) {
         this.deleteDocumentDerivedRecords(documentId);
       }
 
       this.insertRecords(records, "incremental");
-      this.pruneUnreferencedEntitiesAndSources();
+      if (canonical) {
+        // Entity and deterministic edge resolution depends on every document, not
+        // only on the changed subset. Reconcile it from the complete candidate graph.
+        this.reconcileSharedGraphRecords(canonical);
+      } else {
+        this.pruneUnreferencedEntitiesAndSources();
+      }
+      this.writeIndexState(state);
     });
 
     write();
@@ -244,6 +280,42 @@ export class GraphRepository {
   documentHashes(): Map<string, { id: string; hash: string }> {
     const rows = this.db.prepare("SELECT id, path, hash FROM documents").all() as Record<string, unknown>[];
     return new Map(rows.map((row) => [stringValue(row.path), { id: stringValue(row.id), hash: stringValue(row.hash) }]));
+  }
+
+  reusableVectors(chunks: GraphChunk[], profile: { provider: string; model: string; dimensions: number }): ChunkVector[] {
+    if (!chunks.length) return [];
+    const candidateContent = new Map(chunks.map((chunk) => [chunk.id, chunk.content]));
+    const rows = this.db.prepare(`
+      SELECT c.id AS chunk_id, c.content, v.provider, v.model, v.dimensions, v.vector_blob, v.created_at
+      FROM chunks c JOIN chunk_vectors v ON v.chunk_id = c.id
+      WHERE v.provider = ? AND v.model = ? AND v.dimensions = ?
+    `).all(profile.provider, profile.model, profile.dimensions) as Array<Record<string, unknown>>;
+    const reusable: ChunkVector[] = [];
+    for (const row of rows) {
+      const chunkId = stringValue(row.chunk_id);
+      if (candidateContent.get(chunkId) !== stringValue(row.content)) continue;
+      try {
+        const vector = decodeFloat32Vector(row.vector_blob);
+        if (vector.length !== profile.dimensions || !vector.every(Number.isFinite)) continue;
+        reusable.push({ chunkId, provider: stringValue(row.provider), model: stringValue(row.model), dimensions: numberValue(row.dimensions), vector, createdAt: stringValue(row.created_at) });
+      } catch { /* stale or malformed vectors are regenerated */ }
+    }
+    return reusable;
+  }
+
+  preservedDerivedEdges(records: GraphRecordSet): GraphEdge[] {
+    const candidateHashes = new Map(records.documents.map((document) => [document.id, document.hash]));
+    const rows = this.db.prepare(`
+      SELECT e.*
+      FROM edges e
+      JOIN documents from_document ON from_document.id = e.from_id
+      JOIN documents to_document ON to_document.id = e.to_id
+      WHERE e.provenance = 'embedding_similarity'
+    `).all() as Record<string, unknown>[];
+    return rows.map(rowToEdge).filter((edge) => (
+      candidateHashes.get(edge.fromId) === this.documentHash(edge.fromId)
+      && candidateHashes.get(edge.toId) === this.documentHash(edge.toId)
+    ));
   }
 
   searchChunks(ftsQuery: string, limit: number): ChunkSearchRow[] {
@@ -328,7 +400,7 @@ export class GraphRepository {
     return frequencies;
   }
 
-  findEntityDefinitions(entityIds: string[]): ChunkSearchRow[] {
+  findEntityDefinitions(entityIds: string[]): EntityDefinitionSearchRow[] {
     if (!entityIds.length) {
       return [];
     }
@@ -339,7 +411,7 @@ export class GraphRepository {
         d.indexed_at AS d_indexed_at, d.metadata_json AS d_metadata_json,
         s.id AS s_id, s.document_id AS s_document_id, s.anchor AS s_anchor, s.heading AS s_heading,
         s.level AS s_level, s.start_line AS s_start_line, s.end_line AS s_end_line, s.content AS s_content,
-        e.weight AS rank
+        e.weight AS rank, e.to_id AS entity_id
       FROM edges e
       LEFT JOIN sections s ON s.id = e.from_id
       JOIN documents d ON d.id = COALESCE(s.document_id, e.from_id)
@@ -353,7 +425,8 @@ export class GraphRepository {
       document: rowToDocument(row, "d_"),
       section: row.s_id ? rowToSection(row, "s_") : undefined,
       chunk: definitionChunk(row, sectionChunk, documentChunk),
-      rank: numberValue(row.rank)
+      rank: numberValue(row.rank),
+      entityId: stringValue(row.entity_id)
     })));
   }
 
@@ -922,6 +995,83 @@ export class GraphRepository {
     for (const vector of records.vectors) {
       insertVector.run(vectorToParams(vector));
     }
+  }
+
+  private reconcileSharedGraphRecords(records: GraphRecordSet): void {
+    const insertEntity = this.db.prepare(`
+      INSERT INTO entities (id, name, normalized_name, kind, namespace, created_at, metadata_json)
+      VALUES (@id, @name, @normalizedName, @kind, @namespace, @createdAt, @metadataJson)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name, normalized_name = excluded.normalized_name, kind = excluded.kind,
+        namespace = excluded.namespace, metadata_json = excluded.metadata_json
+      WHERE entities.name <> excluded.name OR entities.normalized_name <> excluded.normalized_name
+        OR entities.kind <> excluded.kind OR entities.namespace IS NOT excluded.namespace
+        OR entities.metadata_json IS NOT excluded.metadata_json
+    `);
+    const insertSourceRef = this.db.prepare(`
+      INSERT INTO source_refs (id, path, normalized_path, created_at, metadata_json)
+      VALUES (@id, @path, @normalizedPath, @createdAt, @metadataJson)
+      ON CONFLICT(id) DO UPDATE SET path = excluded.path, normalized_path = excluded.normalized_path,
+        metadata_json = excluded.metadata_json
+      WHERE source_refs.path <> excluded.path OR source_refs.normalized_path <> excluded.normalized_path
+        OR source_refs.metadata_json IS NOT excluded.metadata_json
+    `);
+    const insertEdge = this.db.prepare(`
+      INSERT INTO edges (id, from_id, to_id, kind, weight, confidence, provenance, metadata_json, created_at)
+      VALUES (@id, @fromId, @toId, @kind, @weight, @confidence, @provenance, @metadataJson, @createdAt)
+      ON CONFLICT(id) DO UPDATE SET from_id = excluded.from_id, to_id = excluded.to_id, kind = excluded.kind,
+        weight = excluded.weight, confidence = excluded.confidence, provenance = excluded.provenance,
+        metadata_json = excluded.metadata_json
+      WHERE edges.from_id <> excluded.from_id OR edges.to_id <> excluded.to_id OR edges.kind <> excluded.kind
+        OR edges.weight <> excluded.weight OR edges.confidence <> excluded.confidence
+        OR edges.provenance <> excluded.provenance OR edges.metadata_json IS NOT excluded.metadata_json
+    `);
+    const candidateEntities = new Set(records.entities.map((entity) => entity.id));
+    const candidateSources = new Set(records.sourceRefs.map((sourceRef) => sourceRef.id));
+    const candidateEdges = new Set(records.edges.map((edge) => edge.id));
+    const staleEdges = this.db.prepare("SELECT id FROM edges WHERE provenance <> 'embedding_similarity'").all() as Array<{ id: string }>;
+    const deleteEdge = this.db.prepare("DELETE FROM edges WHERE id = ?");
+    for (const edge of staleEdges) if (!candidateEdges.has(edge.id)) deleteEdge.run(edge.id);
+    for (const entity of records.entities) {
+      const { metadata, ...fields } = entity;
+      insertEntity.run({ ...fields, namespace: entity.namespace ?? null, metadataJson: toJson(metadata) });
+    }
+    for (const sourceRef of records.sourceRefs) {
+      const { metadata, ...fields } = sourceRef;
+      insertSourceRef.run({ ...fields, metadataJson: toJson(metadata) });
+    }
+    for (const edge of records.edges) {
+      const { metadata, ...fields } = edge;
+      insertEdge.run({ ...fields, metadataJson: toJson(metadata) });
+    }
+    const deleteUnusedEntity = this.db.prepare("DELETE FROM entities WHERE id = ? AND id NOT IN (SELECT from_id FROM edges UNION SELECT to_id FROM edges)");
+    for (const row of this.db.prepare("SELECT id FROM entities").all() as Array<{ id: string }>) {
+      if (!candidateEntities.has(row.id)) deleteUnusedEntity.run(row.id);
+    }
+    const deleteUnusedSource = this.db.prepare("DELETE FROM source_refs WHERE id = ? AND id NOT IN (SELECT from_id FROM edges UNION SELECT to_id FROM edges)");
+    for (const row of this.db.prepare("SELECT id FROM source_refs").all() as Array<{ id: string }>) {
+      if (!candidateSources.has(row.id)) deleteUnusedSource.run(row.id);
+    }
+  }
+
+  private assertExpectedGeneration(expectedGeneration: number | undefined): void {
+    if (expectedGeneration === undefined) return;
+    if (this.indexWriteState().generation !== expectedGeneration) {
+      throw new IndexGenerationConflict();
+    }
+  }
+
+  private writeIndexState(state: IndexWriteState | undefined): void {
+    if (!state) return;
+    const nextGeneration = (state.expectedGeneration ?? this.indexWriteState().generation) + 1;
+    const upsert = this.db.prepare("INSERT OR REPLACE INTO schema_metadata (key, value) VALUES (?, ?)");
+    if (state.extractionFingerprint !== undefined) upsert.run("index_extraction_fingerprint", state.extractionFingerprint);
+    upsert.run("index_generation", String(nextGeneration));
+  }
+
+  private documentHash(id: string): string | undefined {
+    const row = this.db.prepare("SELECT hash FROM documents WHERE id = ?").get(id) as { hash?: string } | undefined;
+    return row?.hash;
   }
 
   private prepareInsertVector() {

@@ -15,6 +15,8 @@ export interface SqliteDatabase {
 }
 
 class NodeSqliteAdapter implements SqliteDatabase {
+  private closed = false;
+  private readonly legacyEmptyGet: boolean;
   private readonly db: {
     close: () => void;
     exec: (sql: string) => void;
@@ -30,6 +32,9 @@ class NodeSqliteAdapter implements SqliteDatabase {
     const require = createRequire(import.meta.url);
     const { DatabaseSync } = require("node:sqlite") as { DatabaseSync: new (path: string) => NodeSqliteAdapter["db"] };
     this.db = new DatabaseSync(dbPath);
+    // Early node:sqlite returns a null-filled object instead of undefined for an
+    // empty get(). Probe the behavior rather than tying compatibility to versions.
+    this.legacyEmptyGet = this.db.prepare("SELECT 1 AS value WHERE 0").get() !== undefined;
   }
 
   prepare(sql: string): SqliteStatement {
@@ -42,7 +47,7 @@ class NodeSqliteAdapter implements SqliteDatabase {
           lastInsertRowid: result?.lastInsertRowid ?? 0
         };
       },
-      get: (...params: unknown[]) => statement.get(...params),
+      get: (...params: unknown[]) => this.legacyEmptyGet ? (statement.all(...params) as unknown[])[0] : statement.get(...params),
       all: (...params: unknown[]) => statement.all(...params)
     };
   }
@@ -79,8 +84,9 @@ class NodeSqliteAdapter implements SqliteDatabase {
   }
 
   close(): void {
-    if (this.db.isOpen) {
+    if (!this.closed) {
       this.db.close();
+      this.closed = true;
     }
   }
 }

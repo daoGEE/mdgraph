@@ -1,0 +1,87 @@
+{
+  "date": "2026-09-11",
+  "revision": "79b8230",
+  "installation": "Local npm tarball installed offline with lifecycle scripts disabled into an isolated consumer directory",
+  "commands": [
+    {
+      "command": "mdgraph init --docs **/*.md --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph status --freshness --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph search OrchardScheduler --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph context OrchardScheduler --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph node OrchardScheduler --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph trace OrchardScheduler docs/usage.md --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph doctor --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph index --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph doctor --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph search RecoveryMarker --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph wiki plan --wiki-dir wiki --out plan.json --json --path <fixture>",
+      "exitCode": 0
+    },
+    {
+      "command": "mdgraph wiki brief project-overview --plan plan.json --json --path <fixture>",
+      "exitCode": 0
+    }
+  ],
+  "mcp": [
+    {
+      "tool": "mdgraph_status",
+      "passed": true
+    },
+    {
+      "tool": "mdgraph_search",
+      "passed": true
+    },
+    {
+      "tool": "mdgraph_context",
+      "passed": true
+    },
+    {
+      "tool": "mdgraph_node",
+      "passed": true
+    },
+    {
+      "tool": "mdgraph_trace",
+      "passed": true
+    }
+  ],
+  "recovery": {
+    "staleDetected": true,
+    "freshAfterIndex": true,
+    "changedContentRetrievable": true
+  },
+  "limitations": [
+    "Local macOS execution",
+    "No graphical MCP host session",
+    "No registry publication or remote CI run"
+  ]
+}

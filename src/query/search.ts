@@ -88,6 +88,7 @@ function rankSearchResults(
 ): SearchResult[] {
   const entityCandidates = extractQueryEntityCandidates(query);
   const matchedEntities = repository.findEntitiesByNormalizedNames(entityCandidates.map(normalizeEntityName));
+  const matchedEntitiesById = new Map(matchedEntities.map((entity) => [entity.id, entity]));
   const entityDocumentFrequencies = repository.entityDocumentFrequencies(matchedEntities.map((entity) => entity.id));
   const definitionRows = repository.findEntityDefinitions(matchedEntities.map((entity) => entity.id));
   const ftsQuery = ftsQueryFor(query);
@@ -95,7 +96,7 @@ function rankSearchResults(
   const results: ChannelSearchResult[] = [];
 
   for (const [index, row] of definitionRows.entries()) {
-    const matched = matchedEntitiesForContent(matchedEntities, row.chunk.content);
+    const matched = matchedEntitiesById.get(row.entityId);
     results.push({
       channel: "definition",
       rank: index + 1,
@@ -105,7 +106,7 @@ function rankSearchResults(
         score: adjustScore(200 + row.rank, row.document),
         reason: "definition matched an explicit query entity",
         content: row.chunk.content,
-        matchedEntities: matched
+        matchedEntities: matched ? [matched] : []
       }
     });
   }
@@ -275,7 +276,11 @@ async function executeSearchGraphAsync(
 
 export function extractQueryEntityCandidates(query: string): string[] {
   const candidates = query.match(/`([^`]+)`|\b[A-Z][A-Za-z0-9_.]+\b|\b[A-Z][A-Z0-9_]{2,}\b|\/[A-Za-z0-9_./:{}-]+/g) ?? [];
-  return candidates.map((candidate) => candidate.replace(/^`|`$/g, "").trim()).filter(Boolean);
+  const wholeQuery = query.replace(/^`|`$/g, "").trim();
+  return [...new Set([
+    wholeQuery,
+    ...candidates.map((candidate) => candidate.replace(/^`|`$/g, "").trim())
+  ].filter(Boolean))];
 }
 
 function matchedEntitiesForContent(entities: GraphEntity[], content: string): GraphEntity[] {

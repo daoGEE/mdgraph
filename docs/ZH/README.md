@@ -10,6 +10,7 @@ MDGraph 文档按用户任务组织。安装和首次查询请从仓库的 [中�
 - [检索与上下文](Retrieval_and_Context.md) — 理解搜索通道、可选语义 provider、实体抽取、CJK 处理和上下文打包。
 - [结构化查询与派生关系](Structured_Query_and_Relationships.md) — 执行治理查询，并显式派生非权威的相关文档边。
 - [运行与故障处理](Operations.md) — 保持索引新鲜、解释 watcher 健康状态、安全使用 polling，并处理 provider 或文件监听故障。
+- [Knowledge Card 与 Wiki 工作流](Knowledge_Cards_and_Wiki_Workflow.md) — 在不内置正文生成模型的前提下规划并维护有证据的用户 Wiki。
 
 ## 集成与维护 MDGraph
 

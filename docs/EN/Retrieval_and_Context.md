@@ -110,3 +110,9 @@ Every result includes `packing` metadata. `--debug` additionally reports candida
 - MMR reduces measured redundancy on the repository fixture, but its best lambda and similarity threshold remain corpus-dependent.
 
 See [Evaluation](Evaluation_Questions.md) for public `eval` commands, regression suites, and the limits of the recorded evidence. See [Operations](Operations.md) for index freshness and provider failure recovery.
+
+## Exact entity queries and Knowledge Cards
+
+Search first checks the normalized complete query against indexed entities, including Chinese names and lowercase configuration keys. Definitions declared only in front matter still return their matched entity even when the section text does not repeat it.
+
+`node` responses include a deterministic Knowledge Card with stable node identity, definitions, source references, relationships, and evidence. The card's `maxChars` budget measures serialized JSON characters (default 4,000). Optional lists and display text are shortened with omission counts or `…`; node identity is preserved. A budget too small for the required structure and truncation diagnostics produces an explicit error. Context adds complete card summaries only when its remaining text budget can accommodate them; Markdown content already packed is preserved.
