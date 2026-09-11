@@ -1033,13 +1033,16 @@ export class GraphRepository {
     const deleteEdge = this.db.prepare("DELETE FROM edges WHERE id = ?");
     for (const edge of staleEdges) if (!candidateEdges.has(edge.id)) deleteEdge.run(edge.id);
     for (const entity of records.entities) {
-      insertEntity.run({ ...entity, namespace: entity.namespace ?? null, metadataJson: toJson(entity.metadata) });
+      const { metadata, ...fields } = entity;
+      insertEntity.run({ ...fields, namespace: entity.namespace ?? null, metadataJson: toJson(metadata) });
     }
     for (const sourceRef of records.sourceRefs) {
-      insertSourceRef.run({ ...sourceRef, metadataJson: toJson(sourceRef.metadata) });
+      const { metadata, ...fields } = sourceRef;
+      insertSourceRef.run({ ...fields, metadataJson: toJson(metadata) });
     }
     for (const edge of records.edges) {
-      insertEdge.run({ ...edge, metadataJson: toJson(edge.metadata) });
+      const { metadata, ...fields } = edge;
+      insertEdge.run({ ...fields, metadataJson: toJson(metadata) });
     }
     const deleteUnusedEntity = this.db.prepare("DELETE FROM entities WHERE id = ? AND id NOT IN (SELECT from_id FROM edges UNION SELECT to_id FROM edges)");
     for (const row of this.db.prepare("SELECT id FROM entities").all() as Array<{ id: string }>) {

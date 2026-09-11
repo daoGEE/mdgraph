@@ -74,6 +74,18 @@ try {
   assertPackedFile(packedFiles, "docs/ZH/Retrieval_and_Context.md");
   assertPackedFile(packedFiles, "docs/ZH/Structured_Query_and_Relationships.md");
   assertPackedFile(packedFiles, "docs/ZH/Operations.md");
+  assertPackedFile(packedFiles, "dist/wiki/wiki-plan.js");
+  assertPackedFile(packedFiles, "dist/query/knowledge-card.js");
+  assertPackedFile(packedFiles, "docs/EN/Knowledge_Cards_and_Wiki_Workflow.md");
+  const project = makeTempRoot("mdgraph-pack-workflow-");
+  fs.writeFileSync(path.join(project, "README.md"), "# Packaged Project\n\nInstallation and project overview.\n");
+  run(process.execPath, [installedCliPath, "index", "--path", project, "--json"], { cwd: installDir });
+  const node = JSON.parse(run(process.execPath, [installedCliPath, "node", "README.md", "--path", project, "--json"], { cwd: installDir }).stdout);
+  if (!node.card || JSON.stringify(node.card).length > 4000) throw new Error("Packed node command did not return a bounded card.");
+  const plan = JSON.parse(run(process.execPath, [installedCliPath, "wiki", "plan", "--path", project, "--out", "plan.json", "--json"], { cwd: installDir }).stdout).plan;
+  if (!plan.pages.length || plan.strictFreshness.state !== "fresh") throw new Error("Packed Wiki planning did not return current evidence.");
+  const brief = JSON.parse(run(process.execPath, [installedCliPath, "wiki", "brief", plan.pages[0].id, "--path", project, "--plan", "plan.json", "--json"], { cwd: installDir }).stdout);
+  if (brief.usedChars > brief.maxChars) throw new Error("Packed Wiki brief exceeded its budget.");
   assertNoInternalDocs(packedFiles);
 } finally {
   for (const root of tempRoots) {

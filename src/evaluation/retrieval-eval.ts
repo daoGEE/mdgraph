@@ -36,9 +36,16 @@ export interface EvaluationMetrics {
   topKDocumentRecall: number;
   expectedSectionRecall: number;
   contextPrecision: number;
+  /** Compatibility metric: entity existence across the index. */
   entityRecall: number;
+  /** Compatibility metric: source-reference existence across the index. */
   sourceRefRecall: number;
+  /** Compatibility metric: edge kinds across the index and trace. */
   edgeKindCoverage: number;
+  retrievedEntityRecall: number;
+  retrievedSourceRefRecall: number;
+  retrievedEdgeKindCoverage: number;
+  contextIrrelevantRatio: number;
   traceSuccess: boolean | null;
   latencyMs: number;
   returnedChars: number;
@@ -59,6 +66,7 @@ export interface EvaluationCaseResult {
   id: string;
   query: string;
   passed: boolean;
+  retrievalEvidencePassed: boolean;
   expected: Omit<EvaluationCase, "id" | "query" | "trace">;
   observed: {
     searchDocuments: string[];
@@ -67,6 +75,9 @@ export interface EvaluationCaseResult {
     resolvedEntities: string[];
     resolvedSourceRefs: string[];
     edgeKinds: EdgeKind[];
+    retrievedEntities: string[];
+    retrievedSourceRefs: string[];
+    retrievedEdgeKinds: EdgeKind[];
     trace?: TraceResult;
     ranking: {
       queryMode: SearchQueryMode;
@@ -416,6 +427,7 @@ function evaluationCaseResult(
   const resolvedEntities = resolveExpected(repository, evaluationCase.expectedEntities, "entity");
   const resolvedSourceRefs = resolveExpected(repository, evaluationCase.expectedSourceRefs, "source_ref");
   const edgeKinds = observedEdgeKinds(repository, trace);
+  const returnedEvidence = retrievalEvidence(repository, searchResults, context, trace);
   const metrics = calculateMetrics({
     evaluationCase,
     searchResults,
@@ -424,13 +436,18 @@ function evaluationCaseResult(
     latencyMs,
     resolvedEntities,
     resolvedSourceRefs,
-    edgeKinds
+    edgeKinds,
+    returnedEvidence
   });
 
   return {
     id: evaluationCase.id,
     query: evaluationCase.query,
     passed: casePassed(metrics),
+    retrievalEvidencePassed: casePassed(metrics)
+      && metrics.retrievedEntityRecall === 1
+      && metrics.retrievedSourceRefRecall === 1
+      && metrics.retrievedEdgeKindCoverage === 1,
     expected: {
       expectedDocuments: evaluationCase.expectedDocuments,
       expectedSections: evaluationCase.expectedSections,
@@ -445,6 +462,7 @@ function evaluationCaseResult(
       resolvedEntities,
       resolvedSourceRefs,
       edgeKinds,
+      ...returnedEvidence,
       trace,
       ranking: {
         queryMode,
@@ -460,6 +478,27 @@ function evaluationCaseResult(
   };
 }
 
+function retrievalEvidence(repository: GraphRepository, search: SearchResult[], context: ContextResult, trace: TraceResult | undefined) {
+  const entities = search.flatMap((result) => result.matchedEntities.map((entity) => entity.name));
+  entities.push(...context.items.flatMap((item) => item.matchedEntities.map((name) => name.replace(/ \([^()]*\)$/u, ""))));
+  const sourceRefs = context.items.flatMap((item) => item.sourceRefs?.map((ref) => ref.path) ?? []);
+  const edgeKinds: EdgeKind[] = context.items.flatMap((item) => [
+    ...(item.edgePath?.map((step) => step.edgeKind) ?? []),
+    ...(item.sourceRefs?.map((ref) => ref.edgeKind) ?? [])
+  ]);
+  // The returned search reason identifies a DEFINES traversal; no global graph facts are added.
+  if (search.some((result) => result.reason.includes("definition matched an explicit query entity"))) edgeKinds.push("DEFINES");
+  for (const step of trace?.steps ?? []) {
+    edgeKinds.push(step.edgeKind);
+    for (const id of [step.fromId, step.toId]) {
+      const node = repository.getNode(id);
+      if (node?.kind === "entity") entities.push(node.label);
+      if (node?.kind === "source_ref") sourceRefs.push(node.label);
+    }
+  }
+  return { retrievedEntities: unique(entities), retrievedSourceRefs: unique(sourceRefs), retrievedEdgeKinds: unique(edgeKinds) };
+}
+
 function calculateMetrics(input: {
   evaluationCase: EvaluationCase;
   searchResults: SearchResult[];
@@ -469,6 +508,7 @@ function calculateMetrics(input: {
   resolvedEntities: string[];
   resolvedSourceRefs: string[];
   edgeKinds: EdgeKind[];
+  returnedEvidence: ReturnType<typeof retrievalEvidence>;
 }): EvaluationMetrics {
   const expectedDocumentSet = new Set(input.evaluationCase.expectedDocuments);
   const returnedDocuments = unique(input.searchResults.map((result) => result.document.path));
@@ -485,6 +525,10 @@ function calculateMetrics(input: {
     entityRecall: expectedCovered(input.evaluationCase.expectedEntities, input.resolvedEntities),
     sourceRefRecall: expectedCovered(input.evaluationCase.expectedSourceRefs, input.resolvedSourceRefs),
     edgeKindCoverage: expectedCovered(input.evaluationCase.expectedEdges, input.edgeKinds),
+    retrievedEntityRecall: expectedCovered(input.evaluationCase.expectedEntities, input.returnedEvidence.retrievedEntities),
+    retrievedSourceRefRecall: expectedCovered(input.evaluationCase.expectedSourceRefs, input.returnedEvidence.retrievedSourceRefs),
+    retrievedEdgeKindCoverage: expectedCovered(input.evaluationCase.expectedEdges, input.returnedEvidence.retrievedEdgeKinds),
+    contextIrrelevantRatio: input.context.items.length ? 1 - contextMatches.length / input.context.items.length : 0,
     traceSuccess,
     latencyMs: roundMetric(input.latencyMs),
     returnedChars: input.context.usedChars,

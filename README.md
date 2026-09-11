@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-22%2B%20with%20FTS5-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
 <a href="./README-ZH.md">简体中文</a> · <a href="./docs/EN/README.md">Documentation</a> · <a href="./docs/EN/Architecture.md">Architecture</a> · <a href="./docs/EN/Agent_Integration.md">Agent Integration</a> · <a href="./docs/EN/Public_Contracts.md">Public Contracts</a>
@@ -230,7 +230,7 @@ Query-time provider failures fall back to FTS5/entity/graph results and emit a d
 
 ## Requirements
 
-- Node.js `>=22.5.0`
+- Node.js `>=22.5.0` with an FTS5-enabled `node:sqlite` build. Node 22.23.2 and 26.5.0 are verified; the version number alone does not guarantee FTS5. Use a current Node 22 or newer release.
 - SQLite support from Node's built-in `node:sqlite`
 - Markdown files in a local project directory
 

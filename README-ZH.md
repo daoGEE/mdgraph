@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/daoGEE/mdgraph/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22.5.0-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-22%2B%20with%20FTS5-brightgreen.svg)](https://nodejs.org/)
 [![Release](https://img.shields.io/github/v/release/daoGEE/mdgraph?include_prereleases&label=release)](https://github.com/daoGEE/mdgraph/releases)
 
 <a href="./README.md">English</a> · <a href="./docs/ZH/README.md">文档</a> · <a href="./docs/ZH/Architecture.md">架构说明</a> · <a href="./docs/ZH/Agent_Integration.md">Agent 集成</a> · <a href="./docs/ZH/Public_Contracts.md">公开契约</a>
@@ -230,7 +230,7 @@ mdgraph search --semantic --path /your/project "authentication login"
 
 ## 环境要求
 
-- Node.js `>=22.5.0`
+- Node.js `>=22.5.0`，且内置 `node:sqlite` 启用了 FTS5。已验证 22.23.2 和 26.5.0；仅满足版本号不保证具备 FTS5，请使用当前 Node 22 或更新发行版。
 - Node 内置 `node:sqlite` 支持
 - 本地项目目录中的 Markdown 文件
 

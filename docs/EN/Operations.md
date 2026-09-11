@@ -103,3 +103,9 @@ Indexing records extraction settings and a generation in SQLite metadata. Change
 Concurrent index commits detect a changed generation and rescan once; repeated contention reports an error and can be retried. Parser failures retain the previous document and its graph, report skipped files, and leave incomplete extraction rebuilds pending. Fix the reported Markdown and rerun indexing before relying on that content.
 
 Watch reloads configuration and `.gitignore` rules, including the MDX switch. The replacement watcher becomes ready before the old one closes. Invalid configuration retains the old watch and reports degraded health; correcting the configuration triggers recovery.
+
+## Node.js build requirements
+
+The runtime must provide `node:sqlite` with FTS5; a version number of 22.5.0 alone is insufficient. Node 22.23.2 and 26.5.0 pass the full local test suite. Tested stock 22.5.0 and 22.13.0 builds lack FTS5; adding the experimental SQLite flag alone does not supply it. MDGraph checks the actual capability before applying its persistent schema and reports `sqlite_fts5_unavailable` with upgrade guidance. A build that supplies FTS5 through an extension remains usable.
+
+The early-runtime CI job exercises SQLite compatibility and missing-capability recovery; it is not a full-product support claim for stock Node 22.5.0. Windows validation is covered by CI and must be checked on the corresponding commit before a cross-platform release claim.

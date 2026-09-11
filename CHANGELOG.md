@@ -8,7 +8,21 @@ All notable changes to MDGraph are documented here. MDGraph follows semantic ver
 
 - Experimental deterministic Knowledge Cards on `node` plus spare-budget Card summaries in `context`.
 - Experimental `wiki plan/brief/status/verify` commands for evidence-backed user-maintained Wiki planning, impact status, and read-only verification.
-- A reusable Wiki authoring prompt/skill and a repository-owned self-Wiki acceptance artifact, without changing the five-tool MCP surface or adding a generation provider.
+- A reusable Wiki authoring prompt/skill without changing the five-tool MCP surface or adding a generation provider.
+
+### Fixed
+
+- Enforce real served-project boundaries for MCP roots and SQLite/configuration paths, including symbolic links.
+- Apply embedding deadlines through complete response bodies and retain lexical fallback and existing indexes on failure.
+- Reconcile incremental graph relationships and extraction settings, reuse matching vectors, detect concurrent index commits, and reload watcher configuration without dropping the previous watch.
+- Match complete Chinese/entity/configuration-key queries and retain definition evidence; enforce serialized Knowledge Card budgets.
+- Verify Wiki evidence against current Markdown hashes and validate maintenance field types.
+- Normalize early node:sqlite empty-row behavior and provide actionable recovery when FTS5 is unavailable.
+
+### Added
+
+- Returned-evidence retrieval metrics alongside unchanged legacy index-coverage metrics, plus a reproducible performance sampling script.
+- CI coverage for Node 22 and 26 and early SQLite compatibility; packaged CLI checks for cards and Wiki briefs.
 
 ## 1.1.0 - 2026-08-03
 

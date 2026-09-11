@@ -328,3 +328,7 @@ Diff 只比较 Markdown 图记录、source refs 和 doctor warning codes。它�
 - 问题数组：`orphanDocs`、`deadLinks`、`staleSourceRefs`、`missingDefinitions`、`weaklyLinkedDocs`、`possibleContradictions` 和 `contentRisks`。
 
 `mdgraph doctor --strict` 保持相同输出形状。当 `summary` 中除 `documents` 外的任一问题计数大于零时，以非零状态退出。
+
+## 评估证据补充字段
+
+评估 case 新增 `retrievalEvidencePassed`；`metrics` 新增 `retrievedEntityRecall`、`retrievedSourceRefRecall`、`retrievedEdgeKindCoverage`、`contextIrrelevantRatio`；`observed` 增加对应的实际返回实体、来源与关系类型数组。这些字段统计本次查询暴露的证据，旧覆盖指标及 `passed` 保持原有含义。详见[评估问题](Evaluation_Questions.md)。

@@ -7,6 +7,9 @@ import { GraphRepository } from "../src/db/repositories.js";
 import { indexProject } from "../src/indexer.js";
 import { registerEmbeddingProvider } from "../src/semantic/provider-registry.js";
 import { createFixtureDocs } from "./fixtures.js";
+import { buildGraphRecords } from "../src/extraction/graph-builder.js";
+import { parseMarkdownDocument } from "../src/parser/markdown-parser.js";
+import { loadConfig } from "../src/config/load-config.js";
 
 const roots: string[] = [];
 
@@ -22,6 +25,20 @@ function fixtureRoot(): string {
 }
 
 describe("index consistency", () => {
+  it("reconciles optional entity, edge and source metadata without binding internal objects to SQL", async () => {
+    const root = fixtureRoot();
+    await indexProject(root);
+    const parsed = fs.readdirSync(path.join(root, "docs")).map((name) => parseMarkdownDocument(root, path.join(root, "docs", name)));
+    const records = buildGraphRecords(parsed, loadConfig(root));
+    for (const record of [...records.entities, ...records.sourceRefs, ...records.edges]) record.metadata = { note: "updated provenance" };
+    const repository = new GraphRepository(openDatabase(root));
+    try {
+      repository.replaceDocuments({ documents: [], sections: [], entities: [], sourceRefs: [], edges: [], chunks: [], vectors: [] }, [], [], records);
+      expect(repository.allEntities()[0].metadata).toEqual({ note: "updated provenance" });
+      expect(repository.allSourceRefs()[0].metadata).toEqual({ note: "updated provenance" });
+      expect(repository.allEdges()[0].metadata).toEqual({ note: "updated provenance" });
+    } finally { repository.close(); }
+  });
   it("treats extraction settings as rebuild inputs but ignores query-only settings", async () => {
     const root = fixtureRoot();
     fs.writeFileSync(path.join(root, "docs", "stop-entity.md"), "# Stop Entity\n\n`TransientWatcherEntity` is only an inline reference.\n", "utf8");

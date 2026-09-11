@@ -1033,6 +1033,8 @@ function formatEvaluationReport(report: ReturnType<typeof evaluateRetrieval>): s
         `${result.id}: ${status}`,
         `  query: ${result.query}`,
         `  topKDocumentRecall=${formatMetric(result.metrics.topKDocumentRecall)}, expectedSectionRecall=${formatMetric(result.metrics.expectedSectionRecall)}, contextPrecision=${formatMetric(result.metrics.contextPrecision)}, contextDiversity=${formatMetric(result.metrics.contextDiversity)}`,
+        `  retrievedEntityRecall=${formatMetric(result.metrics.retrievedEntityRecall)}, retrievedSourceRefRecall=${formatMetric(result.metrics.retrievedSourceRefRecall)}, retrievedEdgeKindCoverage=${formatMetric(result.metrics.retrievedEdgeKindCoverage)}, evidencePassed=${result.retrievalEvidencePassed}`,
+        `  contextIrrelevantRatio=${formatMetric(result.metrics.contextIrrelevantRatio)}`,
         `  traceSuccess=${result.metrics.traceSuccess ?? "n/a"}, returnedChars=${result.metrics.returnedChars}, budgetFit=${result.metrics.budgetFit}`
       ].join("\n");
     })

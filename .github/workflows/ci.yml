@@ -11,17 +11,23 @@ permissions:
 
 jobs:
   validate:
-    name: ${{ matrix.os }} / ${{ matrix.suite }}
+    name: ${{ matrix.os }} / Node ${{ matrix.node }} / ${{ matrix.suite }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             suite: full
+            node: 22
+          - os: ubuntu-latest
+            suite: full
+            node: 26
           - os: windows-latest
             suite: full
+            node: 22
           - os: macos-latest
             suite: smoke
+            node: 22
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -32,7 +38,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install dependencies
@@ -93,8 +99,21 @@ jobs:
         if: ${{ matrix.suite == 'full' }}
         uses: actions/upload-artifact@v7
         with:
-          name: mdgraph-${{ matrix.os }}
+          name: mdgraph-${{ matrix.os }}-node-${{ matrix.node }}
           path: |
             .mdgraph/reports/**
             .mdgraph/bundles/private/**
           if-no-files-found: error
+
+  early-sqlite-compatibility:
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --experimental-sqlite
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.5.0
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:run -- __tests__/sqlite-compatibility.test.ts
