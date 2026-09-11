@@ -139,6 +139,7 @@ export type {
   WikiPlan,
   WikiPlanOptions,
   WikiPlanSuggestions,
+  WikiPlanGap,
   WikiDependencySnapshot,
   WikiPlanPage,
   WikiStrictFreshness
@@ -153,6 +154,8 @@ export {
   formatWikiVerification,
   verifyWiki
 } from "./wiki/wiki-status.js";
+
+export type { WikiDependencyAssessment, WikiDependencyChange } from "./wiki/wiki-dependencies.js";
 export type {
   WikiPageState,
   WikiPageStatus,

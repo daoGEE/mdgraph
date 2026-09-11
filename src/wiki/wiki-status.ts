@@ -16,7 +16,9 @@ import {
   type WikiPlan,
   type WikiPlanPage
 } from "./wiki-plan.js";
-import { sourceRefFingerprint, wikiContentFreshness, wikiPageEvidenceStatus } from "./wiki-evidence.js";
+import { sourceRefFingerprint, wikiContentFreshness } from "./wiki-evidence.js";
+
+import { assessWikiDependencies, type WikiDependencyChange, type WikiDependencyAssessment } from "./wiki-dependencies.js";
 
 export const WIKI_STATUS_FORMAT = "mdgraph-wiki-status" as const;
 export const WIKI_STATUS_FORMAT_VERSION = 1 as const;
@@ -32,6 +34,9 @@ export interface WikiPageStatus {
   id: string;
   path: string;
   state: WikiPageState;
+  changes?: WikiDependencyChange[];
+  selectionChanges?: Array<{ field: "source_docs" | "source_refs"; added: string[]; missing: string[] }>;
+  evidenceState?: WikiDependencyAssessment["state"];
   reason?: string;
   recovery?: string;
 }
@@ -70,6 +75,8 @@ export interface WikiVerification {
   format: typeof WIKI_VERIFICATION_FORMAT;
   formatVersion: typeof WIKI_VERIFICATION_FORMAT_VERSION;
   valid: boolean;
+  scope: "maintenance-and-evidence";
+  contentReview: "not-evaluated";
   errors: WikiVerificationIssue[];
   warnings: WikiVerificationIssue[];
   status: WikiStatus;
@@ -118,15 +125,15 @@ export function buildWikiStatus(
     indexFreshness
   };
   const documentsById = new Map(repository.allDocuments().map((document) => [document.id, document]));
-  const pageStatuses = plan.pages.map((page) => statusForPlannedPage(
-    projectRoot,
-    repository,
-    resolvedWikiDir,
-    page,
-    documentsById,
-    planCommand,
-    indexFreshness
-  ));
+  const pageStatuses = plan.pages.map((page) => {
+    const evidence = assessWikiDependencies(projectRoot, repository, page, indexFreshness, plan.wikiDir ?? normalizePath(path.relative(projectRoot, resolvedWikiDir)));
+    return {
+      ...statusForPlannedPage(projectRoot, repository, resolvedWikiDir, page, documentsById, planCommand, evidence),
+      changes: evidence.changes,
+      selectionChanges: wikiSelectionChanges(resolvedWikiDir, page, documentsById),
+      evidenceState: evidence.state
+    };
+  });
   const plannedPaths = new Set(plan.pages.map((page) => page.path));
   const orphaned = scanWikiMarkdownFiles(resolvedWikiDir)
     .filter((pagePath) => !plannedPaths.has(pagePath))
@@ -241,6 +248,8 @@ export function verifyWiki(
     format: WIKI_VERIFICATION_FORMAT,
     formatVersion: WIKI_VERIFICATION_FORMAT_VERSION,
     valid: errors.length === 0,
+    scope: "maintenance-and-evidence",
+    contentReview: "not-evaluated",
     errors,
     warnings,
     status
@@ -250,11 +259,14 @@ export function verifyWiki(
 export function formatWikiStatus(status: WikiStatus): string {
   const lines = [
     `Wiki status: ${status.summary.current} current, ${status.summary.needs_update} needs update, ${status.summary.missing} missing, ${status.summary.orphaned} orphaned`,
+    "Current means recorded dependencies and maintenance fields match; prose correctness is not evaluated.",
     `Plan: ${status.plan.state}`,
     `Evidence freshness: ${status.plan.indexFreshness?.state ?? "unknown"}`
   ];
   for (const page of status.pages) {
     lines.push(`- ${page.id} [${page.state}] ${page.path}`);
+    for (const change of page.changes ?? []) lines.push(`  Changed ${change.kind}: ${change.path} (${change.reason})`);
+    for (const selection of page.selectionChanges ?? []) lines.push(`  Review ${selection.field}: added ${selection.added.join(", ") || "none"}; missing ${selection.missing.join(", ") || "none"}`);
     if (page.reason) {
       lines.push(`  Reason: ${page.reason}`);
     }
@@ -273,6 +285,7 @@ export function formatWikiStatus(status: WikiStatus): string {
 
 export function formatWikiVerification(verification: WikiVerification): string {
   const lines = [
+    "Scope: maintenance fields, links, and evidence. Prose correctness is not evaluated.",
     `Wiki verification: ${verification.valid ? "valid" : "invalid"}`,
     `Errors: ${verification.errors.length}; warnings: ${verification.warnings.length}`
   ];
@@ -287,6 +300,21 @@ export function formatWikiVerification(verification: WikiVerification): string {
   return lines.join("\n");
 }
 
+function wikiSelectionChanges(wikiDir: string, page: WikiPlanPage, documents: Map<string, { path: string }>): NonNullable<WikiPageStatus["selectionChanges"]> {
+  const absolutePath = path.resolve(wikiDir, page.path);
+  if (!fs.existsSync(absolutePath) || !fs.lstatSync(absolutePath).isFile()) return [];
+  const file = readWikiPageFile(wikiDir, page.path);
+  const expectedDocs = page.documentIds.flatMap((id) => documents.get(id) ? [documents.get(id)!.path] : []);
+  return (["source_docs", "source_refs"] as const).flatMap((field) => {
+    if (!isFrontmatterPathArray(file.frontmatter[field])) return [];
+    const actual = frontmatterStringArray(file.frontmatter[field]);
+    const expected = field === "source_docs" ? expectedDocs : page.sourceRefs;
+    const added = actual.filter((value) => !expected.includes(value));
+    const missing = expected.filter((value) => !actual.includes(value));
+    return added.length || missing.length ? [{ field, added, missing }] : [];
+  });
+}
+
 function statusForPlannedPage(
   projectRoot: string,
   repository: GraphRepository,
@@ -294,7 +322,7 @@ function statusForPlannedPage(
   page: WikiPlanPage,
   documentsById: Map<string, { path: string }>,
   planCommand: string,
-  indexFreshness: StatusFreshness
+  evidence: WikiDependencyAssessment
 ): WikiPageStatus {
   const absolutePath = path.resolve(wikiDir, page.path);
   if (!isPathInsideOrEqual(wikiDir, absolutePath)) {
@@ -311,25 +339,15 @@ function statusForPlannedPage(
   if (pageFile.frontmatterError) {
     return pageProblem(page, "needs_update", pageFile.frontmatterError, `Repair YAML front matter in ${page.path}.`);
   }
-  if (indexFreshness.state === "unknown") {
-    return pageProblem(
-      page,
-      "needs_update",
-      `Cannot establish whether indexed source evidence is current: ${indexFreshness.recommendation}.`,
-      "Run `mdgraph index`, regenerate the Wiki plan, then review this page from its current brief."
-    );
-  }
   const wikiId = optionalFrontmatterString(pageFile.frontmatter.wiki_id);
   if (wikiId !== page.id) {
     return pageProblem(page, "needs_update", `Expected wiki_id ${page.id}, found ${wikiId ?? "none"}.`, `Set wiki_id to ${page.id} in ${page.path}.`);
   }
-  const evidence = wikiPageEvidenceStatus(projectRoot, repository, page, indexFreshness);
-  const staleEvidencePath = evidence.staleDocumentPaths[0];
-  if (staleEvidencePath) {
-    return pageProblem(page, "needs_update", `Indexed source document ${staleEvidencePath} changed on disk after indexing.`, "Run `mdgraph index`, regenerate the Wiki plan, then update this page from its new brief.");
-  }
-  if (evidence.currentEvidenceHash !== page.evidenceHash) {
-    return pageProblem(page, "needs_update", "The page dependencies have changed since the plan was created.", planCommand);
+  if (evidence.state !== "fresh") {
+    const change = evidence.changes[0];
+    return pageProblem(page, "needs_update", change
+      ? `${change.kind} dependency ${change.path}: ${change.reason}.`
+      : "Cannot establish whether the page dependencies are current.", evidence.recovery ?? planCommand);
   }
   const evidenceHash = optionalFrontmatterString(pageFile.frontmatter.evidence_hash);
   if (evidenceHash !== page.evidenceHash) {
@@ -344,14 +362,14 @@ function statusForPlannedPage(
     return pageProblem(page, "needs_update", "source_docs must be a non-empty-string array; scalar, empty, and mixed values are not valid evidence.", `Replace source_docs in ${page.path} with the project-relative paths from the current page brief.`);
   }
   if (!sameStrings(sourceDocs, expectedSourceDocs)) {
-    return pageProblem(page, "needs_update", "source_docs does not match the plan evidence documents.", `Replace source_docs in ${page.path} with the project-relative paths from the current page brief.`);
+    return pageProblem(page, "needs_update", "source_docs does not match the plan evidence documents.", `Review source_docs in ${page.path}; add intended sources to the plan documentIds, refresh the plan and brief, then synchronize fields. Preserve user-selected sources until reviewed.`);
   }
   const sourceRefs = frontmatterStringArray(pageFile.frontmatter.source_refs);
   if (!isFrontmatterPathArray(pageFile.frontmatter.source_refs)) {
     return pageProblem(page, "needs_update", "source_refs must be a non-empty-string array; scalar, empty, and mixed values are not valid evidence.", `Replace source_refs in ${page.path} with the project-relative paths from the current page brief.`);
   }
   if (!sameStrings(sourceRefs, page.sourceRefs)) {
-    return pageProblem(page, "needs_update", "source_refs does not match the plan evidence source refs.", `Replace source_refs in ${page.path} with the project-relative paths from the current page brief.`);
+    return pageProblem(page, "needs_update", "source_refs does not match the plan evidence source refs.", `Review source_refs in ${page.path}; add intended sources to the plan sourceRefs, refresh the plan and brief, then synchronize fields. Preserve user-selected sources until reviewed.`);
   }
   return { id: page.id, path: page.path, state: "current" };
 }

@@ -1,14 +1,10 @@
-# Wiki Authoring Prompt
+# Create or update a project Wiki
 
-Part of the [MDGraph Agent Pack](../README.md).
+Use MDGraph to prepare evidence, then author the Markdown after reading the sources.
 
-Use this when the host supports prompts but not reusable skills.
-
-1. Generate or read the current WikiPlan. If status reports a stale or unknown index, run `mdgraph index`, regenerate the plan, and then continue.
-2. Run `wiki status` before a batch update and select only `needs_update` or `missing` pages.
-3. Fetch one WikiPageBrief at a time. Read its process documents and inspect its source refs before writing behavioral claims.
-4. Write a coherent user manual page rather than concatenating graph records or Card summaries.
-5. Preserve correct user prose and maintain `wiki_id`, `evidence_hash`, `source_docs`, and `source_refs`. The two source fields must be arrays of non-empty project-relative paths; never replace them with scalar values or mixed arrays.
-6. Run `wiki verify` and repair only issues attributable to the current page.
-
-Do not call a generation provider from MDGraph, overwrite unrelated pages, delete orphaned pages automatically, or treat verification as a prose-quality judgment.
+1. Check the index and existing Wiki status. Refresh stale evidence within the requested maintenance scope.
+2. Create a plan or preserve an existing one with `wiki plan --from <plan> --out <next-plan>`. Specify `--wiki-dir` for v1 migration. Review suggested pages, sources, and gaps before adopting changes.
+3. For each affected page, obtain `wiki brief`. Use the primary documents, supplementary material, source inspection paths, and Card ownership labels. Resolve stale or unknown evidence before accepting its hash.
+4. Preserve correct prose and selected sources. Update `wiki_id`, `evidence_hash`, `source_docs`, and `source_refs` from the reviewed plan. Both source fields are arrays; additional author-selected sources should be added to the plan instead of silently removed.
+5. Run `wiki verify`; fix the affected page's maintenance, link, and evidence issues. Do not delete orphaned pages automatically.
+6. Execute the key documented user steps and record the revision, commands, results, and limitations separately. Verification does not evaluate prose correctness.

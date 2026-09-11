@@ -54,7 +54,7 @@ describe("Wiki evidence", () => {
       const status = buildWikiStatus(root, repository, wikiDir, plan);
       expect(brief.strictFreshness.state).toBe("stale");
       expect(brief.writingRequirements).toEqual(expect.arrayContaining([
-        expect.stringContaining("Do not set evidence_hash from this stale plan.")
+        expect.stringContaining("Do not set evidence_hash from this unresolved evidence.")
       ]));
       expect(status.pages.find((page) => page.id === "architecture")).toMatchObject({ state: "needs_update" });
       expect(formatWikiPageBrief(brief)).toContain("Source documents: docs/Architecture.md");

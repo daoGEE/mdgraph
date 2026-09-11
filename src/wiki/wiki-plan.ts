@@ -24,6 +24,8 @@ import {
 } from "./wiki-evidence.js";
 import { WIKI_DOMAINS as DOMAIN_TEMPLATES, type WikiDomain } from "./wiki-domains.js";
 
+import { assessWikiDependencies, type WikiDependencyAssessment } from "./wiki-dependencies.js";
+
 export { calculateWikiPageEvidenceHash, safeProjectRelativePath, sourceRefFingerprint } from "./wiki-evidence.js";
 
 export const WIKI_PLAN_FORMAT = "mdgraph-wiki-plan" as const;
@@ -94,6 +96,10 @@ export interface WikiPageBrief {
   maxChars: number;
   usedChars: number;
   sourceDocuments: WikiBriefSourceDocument[];
+  supplementaryDocuments: WikiBriefSourceDocument[];
+  sourceInspections: Array<{ path: string; instruction: string }>;
+  evidenceGaps: WikiPlanGap[];
+  dependencyEvidence: WikiDependencyAssessment;
   contextItems: ContextItem[];
   knowledgeCards: KnowledgeCard[];
   writingRequirements: string[];
@@ -246,8 +252,12 @@ export function buildWikiPageBrief(
     knowledgeCards.push(card);
     usedChars += cardChars;
   }
-  const currentEvidenceHash = calculateWikiPageEvidenceHash(projectRoot, repository, page);
-  const strictFreshness = wikiStrictFreshness(projectRoot, repository, plan.wikiDir ?? "wiki");
+  const strictFreshness = wikiStrictFreshness(projectRoot, repository, wikiDir);
+  const dependencyEvidence = assessWikiDependencies(projectRoot, repository, page, strictFreshness, wikiDir);
+  const evidenceGaps = pageGaps(projectRoot, repository, page, wikiDir);
+  const plannedPaths = new Set(plannedDocuments.map((document) => document.path));
+  const supplementaryPaths = new Set(contextItems.filter((item) => !plannedPaths.has(item.path)).map((item) => item.path));
+  const supplementaryDocuments = [...documentsById.values()].filter((document) => supplementaryPaths.has(document.path));
   const writingRequirements = [
     `Write for this audience: ${page.audience}`,
     `Make the page achieve this purpose: ${page.purpose}`,
@@ -256,9 +266,9 @@ export function buildWikiPageBrief(
     "Distinguish directly evidenced behavior from conclusions that still require source verification.",
     "Keep project-relative source_docs and source_refs in front matter, and preserve wiki_id and evidence_hash.",
     "Do not overwrite or rewrite unrelated Wiki pages.",
-    strictFreshness.state === "fresh" && currentEvidenceHash === page.evidenceHash
+    strictFreshness.state === "fresh" && dependencyEvidence.state === "fresh" && !evidenceGaps.length
       ? `Set evidence_hash to ${page.evidenceHash}.`
-      : `Indexed Markdown evidence is ${strictFreshness.state}; run \`mdgraph index\`, regenerate the Wiki plan, then update this page from its new brief. Do not set evidence_hash from this stale plan.`
+      : `Index evidence: ${strictFreshness.state}; page dependencies: ${dependencyEvidence.state}. ${dependencyEvidence.recovery ?? "Run mdgraph index, review missing sources, and refresh the plan before finalizing this page."} Do not set evidence_hash from this unresolved evidence.`
   ];
   const suggestedNextQueries = uniqueStrings([
     ...page.evidenceQueries.map((evidenceQuery) => `mdgraph context ${JSON.stringify(evidenceQuery)}`),
@@ -279,6 +289,10 @@ export function buildWikiPageBrief(
       status: document.status,
       trustTier: document.trustTier
     })),
+    supplementaryDocuments: supplementaryDocuments.map((document) => ({ id: document.id, path: document.path, title: document.title, type: document.type, status: document.status, trustTier: document.trustTier })),
+    sourceInspections: page.sourceRefs.map((source) => ({ path: source, instruction: "Inspect this selected project file before making implementation claims; a reference alone does not prove behavior." })),
+    evidenceGaps,
+    dependencyEvidence,
     contextItems,
     knowledgeCards,
     writingRequirements,
@@ -326,7 +340,11 @@ export function formatWikiPageBrief(brief: WikiPageBrief): string {
     `Budget: ${brief.usedChars}/${brief.maxChars} chars`,
     `Source documents: ${brief.sourceDocuments.map((document) => document.path).join(", ") || "none"}`,
     `Context items: ${brief.contextItems.length}; Knowledge Cards: ${brief.knowledgeCards.length}`,
-    `Evidence freshness: ${brief.strictFreshness.state}`,
+    `Evidence freshness: ${brief.strictFreshness.state}; page dependencies: ${brief.dependencyEvidence.state}`,
+    `Supplementary documents: ${brief.supplementaryDocuments.map((document) => document.path).join(", ") || "none"}`,
+    ...brief.sourceInspections.map((source) => `Inspect source: ${source.path}. ${source.instruction}`),
+    ...brief.evidenceGaps.map((gap) => `Evidence gap: ${gap.path ?? gap.kind}: ${gap.reason} Recovery: ${gap.recovery}`),
+    ...brief.dependencyEvidence.changes.map((change) => `Dependency change: ${change.path}: ${change.reason}`),
     "Writing requirements:",
     ...brief.writingRequirements.map((requirement) => `- ${requirement}`),
     "Suggested next queries:",
