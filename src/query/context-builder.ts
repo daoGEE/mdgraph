@@ -643,7 +643,7 @@ function addContextCardSummaries(
       return item;
     }
     const cardSummary = card.summary;
-    if (cardSummary.length < 32 || cardSummary.length > remaining) {
+    if (cardSummary.length < 32 || cardSummary.length > remaining || cardSummary.endsWith("…")) {
       return item;
     }
     remaining -= cardSummary.length;

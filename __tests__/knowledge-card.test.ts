@@ -52,21 +52,16 @@ describe("KnowledgeCard", () => {
         definitions: expect.arrayContaining([expect.objectContaining({ label: "AuthService", edgeKind: "DEFINES" })]),
         sourceRefs: expect.arrayContaining([expect.objectContaining({ path: "src/auth/AuthService.ts", edgeKind: "IMPLEMENTS", provenance: "frontmatter" })])
       });
-      expect(documentCard?.relatedDocuments.map((reference) => reference.path)).toEqual(expect.arrayContaining([
-        "docs/adr/adr-001-cache-failure-policy.md",
-        "docs/auth-v3-design.md",
-        "docs/redis-cache-design.md"
+      expect(documentCard?.nextReads).toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: "AuthService", association: expect.any(String), reason: expect.any(String) })
       ]));
       expect(sectionCard).toMatchObject({
         kind: "section",
-        summary: expect.stringContaining("#session-refresh"),
-        relatedDocuments: expect.arrayContaining([expect.objectContaining({ path: "docs/auth-v2-design.md" })])
+        summary: expect.stringContaining("docs/auth-v2-design.md#session-refresh")
       });
       expect(entityCard).toMatchObject({
         kind: "entity",
-        definitions: expect.arrayContaining([expect.objectContaining({ path: "docs/auth-v2-design.md", edgeKind: "DEFINES" })]),
-        relatedDocuments: expect.arrayContaining([expect.objectContaining({ path: "docs/auth-v2-design.md" })]),
-        sourceRefs: expect.arrayContaining([expect.objectContaining({ path: "src/auth/AuthService.ts" })])
+        definitions: expect.arrayContaining([expect.objectContaining({ path: "docs/auth-v2-design.md", edgeKind: "DEFINES" })])
       });
       expect(sourceRefCard).toMatchObject({
         kind: "source_ref",
@@ -126,6 +121,7 @@ describe("KnowledgeCard", () => {
         maxSourceRefs: 0,
         maxRelatedDocuments: 0,
         maxEvidence: 0,
+        maxNextReads: 0,
         maxChars: 50_000
       });
       expect(countLimited?.truncated).toBeDefined();
@@ -136,13 +132,15 @@ describe("KnowledgeCard", () => {
         definitions: [],
         sourceRefs: [],
         relatedDocuments: [],
-        evidence: []
+        evidence: [],
+        nextReads: []
       }).length;
       expect(() => buildKnowledgeCard(repository, document!, {
         maxDefinitions: 0,
         maxSourceRefs: 0,
         maxRelatedDocuments: 0,
         maxEvidence: 0,
+        maxNextReads: 0,
         maxChars: structuralMinimumBudget - 1
       })).toThrow(/truncation metadata/u);
       const markerMinimumBudget = JSON.stringify({
@@ -152,13 +150,15 @@ describe("KnowledgeCard", () => {
         definitions: [],
         sourceRefs: [],
         relatedDocuments: [],
-        evidence: []
+        evidence: [],
+        nextReads: []
       }).length;
       const atMinimum = buildKnowledgeCard(repository, document!, {
         maxDefinitions: 0,
         maxSourceRefs: 0,
         maxRelatedDocuments: 0,
         maxEvidence: 0,
+        maxNextReads: 0,
         maxChars: markerMinimumBudget
       });
       expect(JSON.stringify(atMinimum).length).toBeLessThanOrEqual(markerMinimumBudget);
@@ -169,6 +169,7 @@ describe("KnowledgeCard", () => {
         maxSourceRefs: 0,
         maxRelatedDocuments: 0,
         maxEvidence: 0,
+        maxNextReads: 0,
         maxChars: markerMinimumBudget - 1
       })).toThrow(/truncated text markers/u);
 
@@ -177,6 +178,7 @@ describe("KnowledgeCard", () => {
         maxSourceRefs: 0,
         maxRelatedDocuments: 0,
         maxEvidence: 0,
+        maxNextReads: 0,
         maxChars: markerMinimumBudget + 8
       });
       expect(textLimited?.summary.endsWith("…") || textLimited?.label.endsWith("…")).toBe(true);

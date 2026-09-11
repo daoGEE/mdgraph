@@ -39,6 +39,8 @@ export {
   formatKnowledgeCard
 } from "./query/knowledge-card.js";
 export type {
+  CardAssociation,
+  CardNextRead,
   CardEvidence,
   CardReference,
   CardSourceReference,

@@ -14,10 +14,12 @@ export const DEFAULT_KNOWLEDGE_CARD_LIMITS = {
   sourceRefs: 8,
   relatedDocuments: 8,
   evidence: 12,
+  nextReads: 6,
   maxChars: 4_000
 } as const;
 
 export type KnowledgeCardNodeKind = Exclude<NodeRecord["kind"], "chunk">;
+export type CardAssociation = "direct" | "inherited" | "related";
 
 export interface CardReference {
   nodeId: string;
@@ -29,6 +31,12 @@ export interface CardReference {
   edgeKind?: EdgeKind;
   provenance?: Provenance;
   confidence?: number;
+  /** Whether this card owns the edge, inherited it from containment, or reaches it through another graph node. */
+  association?: CardAssociation;
+  /** The graph node that owns the displayed fact when it is not this card's node. */
+  originNodeId?: string;
+  /** The graph node used to reach a related fact. */
+  viaNodeId?: string;
 }
 
 export interface CardSourceReference {
@@ -37,6 +45,9 @@ export interface CardSourceReference {
   edgeKind: Extract<EdgeKind, "IMPLEMENTS" | "REFERENCES_SOURCE">;
   provenance: Provenance;
   confidence: number;
+  association?: CardAssociation;
+  originNodeId?: string;
+  viaNodeId?: string;
 }
 
 export interface CardEvidence {
@@ -48,6 +59,13 @@ export interface CardEvidence {
   edgeKind: EdgeKind;
   provenance: Provenance;
   confidence: number;
+  association?: CardAssociation;
+  originNodeId?: string;
+  viaNodeId?: string;
+}
+
+export interface CardNextRead extends CardReference {
+  reason: string;
 }
 
 export interface KnowledgeCard {
@@ -59,11 +77,13 @@ export interface KnowledgeCard {
   sourceRefs: CardSourceReference[];
   relatedDocuments: CardReference[];
   evidence: CardEvidence[];
+  nextReads?: CardNextRead[];
   truncated?: {
     definitions?: number;
     sourceRefs?: number;
     relatedDocuments?: number;
     evidence?: number;
+    nextReads?: number;
   };
 }
 
@@ -72,6 +92,7 @@ export interface KnowledgeCardOptions {
   maxSourceRefs?: number;
   maxRelatedDocuments?: number;
   maxEvidence?: number;
+  maxNextReads?: number;
   maxChars?: number;
 }
 
@@ -80,6 +101,7 @@ interface CardLimits {
   sourceRefs: number;
   relatedDocuments: number;
   evidence: number;
+  nextReads: number;
   maxChars: number;
 }
 
@@ -88,6 +110,7 @@ interface CardFacts {
   sourceRefs: CardSourceReference[];
   relatedDocuments: CardReference[];
   evidence: CardEvidence[];
+  nextReads: CardNextRead[];
 }
 
 export interface KnowledgeCardBuilder {
@@ -133,7 +156,8 @@ export function createKnowledgeCardBuilder(
         definitions: facts.definitions,
         sourceRefs: facts.sourceRefs,
         relatedDocuments: facts.relatedDocuments,
-        evidence: facts.evidence
+        evidence: facts.evidence,
+        nextReads: facts.nextReads
       }, limits);
     }
   };
@@ -154,7 +178,8 @@ export function formatKnowledgeCard(card: KnowledgeCard): string {
     formatReferenceList("Definitions", card.definitions),
     formatSourceReferenceList(card.sourceRefs),
     formatReferenceList("Related documents", card.relatedDocuments),
-    formatEvidenceList(card.evidence)
+    formatEvidenceList(card.evidence),
+    formatNextReadList(card.nextReads ?? [])
   ];
   const truncated = card.truncated
     ? Object.entries(card.truncated).map(([field, count]) => `${field}: ${count}`).join(", ")
@@ -177,21 +202,27 @@ function collectCardFacts(
   const sourceRefEdges = node.kind === "entity"
     ? sourceRefEdgesForDocuments(relatedDocumentIds, sectionsByDocument, edgesByNode, nodes)
     : directEdges;
-  const sourceReferences = sourceReferencesFromEdges(sourceRefEdges, nodes);
+  const sourceReferences = sourceReferencesFromEdges(sourceRefEdges, nodes, node, directEdges);
   const relatedDocuments = [...relatedDocumentIds]
     .flatMap((documentId) => {
       const document = nodes.get(documentId);
-      return document?.kind === "document" ? [referenceForNode(document)] : [];
+        return document?.kind === "document" ? [referenceForNode(document, undefined, nodes, {
+          association: node.kind === "section" && document.id === (node.data as GraphSection).documentId ? "inherited" : "related",
+          originNodeId: document.id
+        })] : [];
     })
     .sort(compareReferences);
   const evidence = directEdges
-    .flatMap((edge) => evidenceForEdge(edge, nodes))
+    .filter((edge) => edge.kind !== "CONTAINS")
+    .flatMap((edge) => evidenceForEdge(edge, nodes, associationForEdge(node, edge, nodes)))
     .sort(compareEvidence);
+  const nextReads = nextReadsForFacts(node, definitions, sourceReferences, relatedDocuments, evidence, nodes);
   return {
     definitions: dedupeReferences(definitions).sort(compareReferences),
     sourceRefs: dedupeSourceReferences(sourceReferences).sort(compareSourceReferences),
     relatedDocuments,
-    evidence
+    evidence,
+    nextReads
   };
 }
 
@@ -207,13 +238,13 @@ function definitionReferences(node: NodeRecord, edges: GraphEdge[], nodes: Map<s
       }
       const location = nodes.get(edge.fromId);
       if (location && location.kind !== "chunk") {
-        definitions.push(referenceForNode(location, edge, nodes));
+        definitions.push(referenceForNode(location, edge, nodes, associationForEdge(node, edge, nodes)));
       }
       continue;
     }
     const entity = nodes.get(edge.toId);
     if (entity?.kind === "entity") {
-      definitions.push(referenceForNode(entity, edge));
+      definitions.push(referenceForNode(entity, edge, nodes, associationForEdge(node, edge, nodes)));
     }
   }
   return definitions;
@@ -260,7 +291,12 @@ function sourceRefEdgesForDocuments(
   });
 }
 
-function sourceReferencesFromEdges(edges: GraphEdge[], nodes: Map<string, NodeRecord>): CardSourceReference[] {
+function sourceReferencesFromEdges(
+  edges: GraphEdge[],
+  nodes: Map<string, NodeRecord>,
+  cardNode: NodeRecord,
+  directEdges: GraphEdge[]
+): CardSourceReference[] {
   const references: CardSourceReference[] = [];
   for (const edge of edges) {
     if (edge.kind !== "IMPLEMENTS" && edge.kind !== "REFERENCES_SOURCE") {
@@ -279,7 +315,8 @@ function sourceReferencesFromEdges(edges: GraphEdge[], nodes: Map<string, NodeRe
       path: (sourceNode.data as SourceRef).path,
       edgeKind: edge.kind,
       provenance: edge.provenance,
-      confidence: edge.confidence
+      confidence: edge.confidence,
+      ...associationForSourceRef(cardNode, edge, nodes, directEdges)
     });
   }
   return references;
@@ -289,21 +326,33 @@ function cardSummary(node: NodeRecord, facts: CardFacts, nodes: Map<string, Node
   switch (node.kind) {
     case "document": {
       const document = node.data as GraphDocument;
-      return `${document.title} is a ${document.type} document at ${document.path} with status ${document.status} and trust tier ${document.trustTier}; the current graph exposes ${facts.definitions.length} definition(s), ${facts.sourceRefs.length} source reference(s), and ${facts.relatedDocuments.length} directly related document(s).`;
+      const direct = facts.evidence.find((fact) => fact.association === "direct" && fact.edgeKind !== "CONTAINS");
+      return direct
+        ? `${document.path} (${document.type}, ${document.status}) directly ${edgeSummaryVerb(direct.edgeKind)} ${direct.toLabel} via ${direct.provenance}.`
+        : `${document.path} (${document.type}, ${document.status}) is located at the document root; section facts retain their section origins.`;
     }
     case "section": {
       const section = node.data as GraphSection;
       const document = nodes.get(section.documentId);
       const path = document?.kind === "document" ? (document.data as GraphDocument).path : section.documentId;
-      return `${section.heading} is the section ${path}#${section.anchor} at lines ${section.startLine}-${section.endLine}; the current graph exposes ${facts.definitions.length} definition(s), ${facts.sourceRefs.length} source reference(s), and ${facts.evidence.length} evidence edge(s).`;
+      const direct = facts.evidence.find((fact) => fact.association === "direct" && fact.edgeKind !== "CONTAINS");
+      return direct
+        ? `${path}#${section.anchor} at lines ${section.startLine}-${section.endLine} directly ${edgeSummaryVerb(direct.edgeKind)} ${direct.toLabel} via ${direct.provenance}; document-frontmatter facts are marked inherited.`
+        : `${path}#${section.anchor} at lines ${section.startLine}-${section.endLine}; document-frontmatter facts are marked inherited.`;
     }
     case "entity": {
       const entity = node.data as GraphEntity;
-      return `${entity.name} is a ${entity.kind} entity with ${facts.definitions.length} definition location(s), ${facts.relatedDocuments.length} related document(s), and ${facts.sourceRefs.length} source reference(s) in the current graph.`;
+      const definition = facts.definitions.find((fact) => fact.association === "direct");
+      return definition
+        ? `${entity.name} (${entity.kind}) is directly defined at ${referenceLocation(definition)} via ${definition.provenance}.`
+        : `${entity.name} (${entity.kind}) has no direct definition edge; related source references are graph background, not implementation proof.`;
     }
     case "source_ref": {
       const sourceRef = node.data as SourceRef;
-      return `${sourceRef.path} is a project source reference linked from ${facts.relatedDocuments.length} document(s) by ${facts.evidence.length} evidence edge(s) in the current graph.`;
+      const direct = facts.evidence.find((fact) => fact.association === "direct" && fact.edgeKind !== "CONTAINS");
+      return direct
+        ? `${sourceRef.path} is directly linked to ${direct.fromLabel} by ${direct.edgeKind}/${direct.provenance}.`
+        : `${sourceRef.path} is a source reference represented by the current graph.`;
     }
     default:
       return `${node.label} is represented by the current graph.`;
@@ -322,28 +371,52 @@ function fitCardToLimits(card: KnowledgeCard, limits: CardLimits): KnowledgeCard
     definitions: takeWithOmitted(card.definitions, limits.definitions, "definitions", truncated),
     sourceRefs: takeWithOmitted(card.sourceRefs, limits.sourceRefs, "sourceRefs", truncated),
     relatedDocuments: takeWithOmitted(card.relatedDocuments, limits.relatedDocuments, "relatedDocuments", truncated),
-    evidence: takeWithOmitted(card.evidence, limits.evidence, "evidence", truncated)
+    evidence: takeWithOmitted(card.evidence, limits.evidence, "evidence", truncated),
+    nextReads: takeWithOmitted(card.nextReads ?? [], limits.nextReads, "nextReads", truncated)
   };
   if (Object.keys(truncated).length) {
     fitted.truncated = truncated;
   }
 
-  const removalOrder: Array<keyof Pick<KnowledgeCard, "evidence" | "relatedDocuments" | "sourceRefs" | "definitions">> = [
-    "evidence",
-    "relatedDocuments",
-    "sourceRefs",
-    "definitions"
-  ];
   while (serializedCardLength(fitted) > limits.maxChars) {
-    const field = removalOrder.find((candidate) => fitted[candidate].length > 0);
+    const field = removeLowestPriorityFact(fitted);
     if (!field) {
       break;
     }
-    fitted[field].pop();
     fitted.truncated ??= {};
     fitted.truncated[field] = (fitted.truncated[field] ?? 0) + 1;
   }
   return fitCardTextToBudget(fitted, limits.maxChars);
+}
+
+function removeLowestPriorityFact(card: KnowledgeCard): keyof NonNullable<KnowledgeCard["truncated"]> | undefined {
+  const remove = <T>(field: keyof Pick<KnowledgeCard, "definitions" | "sourceRefs" | "relatedDocuments" | "evidence" | "nextReads">, predicate?: (item: T) => boolean) => {
+    const values = card[field] as T[];
+    const index = predicate ? lastMatchingIndex(values, predicate) : values.length - 1;
+    if (index < 0) {
+      return false;
+    }
+    values.splice(index, 1);
+    return true;
+  };
+  if (remove<CardReference>("relatedDocuments")) return "relatedDocuments";
+  if (remove<CardSourceReference>("sourceRefs", (item) => item.association !== "direct")) return "sourceRefs";
+  if (remove<CardEvidence>("evidence", (item) => item.association !== "direct")) return "evidence";
+  if (remove<CardReference>("definitions", (item) => item.association !== "direct")) return "definitions";
+  if (remove<CardNextRead>("nextReads")) return "nextReads";
+  if (remove<CardEvidence>("evidence")) return "evidence";
+  if (remove<CardSourceReference>("sourceRefs")) return "sourceRefs";
+  if (remove<CardReference>("definitions")) return "definitions";
+  return undefined;
+}
+
+function lastMatchingIndex<T>(values: T[], predicate: (item: T) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (predicate(values[index]!)) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function minimumCard(card: KnowledgeCard): KnowledgeCard {
@@ -355,7 +428,8 @@ function minimumCard(card: KnowledgeCard): KnowledgeCard {
     definitions: [],
     sourceRefs: [],
     relatedDocuments: [],
-    evidence: []
+    evidence: [],
+    nextReads: []
   };
   if (card.truncated) {
     minimum.truncated = card.truncated;
@@ -442,6 +516,7 @@ function knowledgeCardLimits(options: KnowledgeCardOptions): CardLimits {
     sourceRefs: nonNegativeIntegerOr(options.maxSourceRefs, DEFAULT_KNOWLEDGE_CARD_LIMITS.sourceRefs),
     relatedDocuments: nonNegativeIntegerOr(options.maxRelatedDocuments, DEFAULT_KNOWLEDGE_CARD_LIMITS.relatedDocuments),
     evidence: nonNegativeIntegerOr(options.maxEvidence, DEFAULT_KNOWLEDGE_CARD_LIMITS.evidence),
+    nextReads: nonNegativeIntegerOr(options.maxNextReads, DEFAULT_KNOWLEDGE_CARD_LIMITS.nextReads),
     maxChars: positiveIntegerOr(options.maxChars, DEFAULT_KNOWLEDGE_CARD_LIMITS.maxChars)
   };
 }
@@ -520,7 +595,8 @@ function owningDocumentId(node: NodeRecord | undefined): string | undefined {
 function referenceForNode(
   node: Exclude<NodeRecord, { kind: "chunk" }> | NodeRecord,
   edge?: GraphEdge,
-  nodes?: Map<string, NodeRecord>
+  nodes?: Map<string, NodeRecord>,
+  association?: Pick<CardReference, "association" | "originNodeId" | "viaNodeId">
 ): CardReference {
   const reference: CardReference = {
     nodeId: node.id,
@@ -545,10 +621,14 @@ function referenceForNode(
     reference.provenance = edge.provenance;
     reference.confidence = edge.confidence;
   }
-  return reference;
+  return { ...reference, ...association };
 }
 
-function evidenceForEdge(edge: GraphEdge, nodes: Map<string, NodeRecord>): CardEvidence[] {
+function evidenceForEdge(
+  edge: GraphEdge,
+  nodes: Map<string, NodeRecord>,
+  association: Pick<CardEvidence, "association" | "originNodeId" | "viaNodeId">
+): CardEvidence[] {
   const from = nodes.get(edge.fromId);
   const to = nodes.get(edge.toId);
   if (!from || !to || from.kind === "chunk" || to.kind === "chunk") {
@@ -562,15 +642,131 @@ function evidenceForEdge(edge: GraphEdge, nodes: Map<string, NodeRecord>): CardE
     toLabel: to.label,
     edgeKind: edge.kind,
     provenance: edge.provenance,
-    confidence: edge.confidence
+    confidence: edge.confidence,
+    ...association
   }];
+}
+
+function associationForEdge(
+  cardNode: NodeRecord,
+  edge: GraphEdge,
+  nodes: Map<string, NodeRecord>
+): Pick<CardEvidence, "association" | "originNodeId" | "viaNodeId"> {
+  if (edge.fromId === cardNode.id || edge.toId === cardNode.id) {
+    return { association: "direct", originNodeId: cardNode.id };
+  }
+  if (cardNode.kind === "document") {
+    const section = [edge.fromId, edge.toId]
+      .map((id) => nodes.get(id))
+      .find((candidate): candidate is NodeRecord => candidate?.kind === "section" && (candidate.data as GraphSection).documentId === cardNode.id);
+    if (section) {
+      return { association: "inherited", originNodeId: section.id, viaNodeId: section.id };
+    }
+  }
+  if (cardNode.kind === "section") {
+    const documentId = (cardNode.data as GraphSection).documentId;
+    if (edge.fromId === documentId || edge.toId === documentId) {
+      return { association: "inherited", originNodeId: documentId, viaNodeId: documentId };
+    }
+  }
+  return { association: "related", originNodeId: edge.fromId, viaNodeId: edge.fromId };
+}
+
+function associationForSourceRef(
+  cardNode: NodeRecord,
+  edge: GraphEdge,
+  nodes: Map<string, NodeRecord>,
+  directEdges: GraphEdge[]
+): Pick<CardSourceReference, "association" | "originNodeId" | "viaNodeId"> {
+  if (cardNode.kind !== "entity") {
+    return associationForEdge(cardNode, edge, nodes);
+  }
+  const document = [edge.fromId, edge.toId]
+    .map((id) => nodes.get(id))
+    .find((candidate): candidate is NodeRecord => candidate?.kind === "document");
+  const definition = directEdges.find((candidate) => candidate.kind === "DEFINES" && candidate.toId === cardNode.id);
+  return {
+    association: "related",
+    originNodeId: document?.id ?? edge.fromId,
+    viaNodeId: definition?.fromId ?? document?.id
+  };
+}
+
+function nextReadsForFacts(
+  node: NodeRecord,
+  definitions: CardReference[],
+  sourceRefs: CardSourceReference[],
+  relatedDocuments: CardReference[],
+  evidence: CardEvidence[],
+  nodes: Map<string, NodeRecord>
+): CardNextRead[] {
+  const nextReads: CardNextRead[] = [];
+  for (const definition of definitions.filter((fact) => fact.nodeId !== node.id)) {
+    nextReads.push({ ...definition, reason: "Read the definition location recorded by the graph." });
+  }
+  for (const related of relatedDocuments.filter((fact) => fact.nodeId !== node.id)) {
+    nextReads.push({ ...related, reason: "Read the graph-linked document for relationship context." });
+  }
+  for (const source of sourceRefs) {
+    const sourceNode = nodes.get(source.nodeId);
+    if (sourceNode?.kind === "source_ref") {
+      nextReads.push({
+        ...referenceForNode(sourceNode, undefined, nodes, source),
+        reason: source.association === "direct"
+          ? "Inspect the source reference directly linked by this graph edge."
+          : "Inspect the source reference as related graph background; it is not direct implementation proof for this card."
+      });
+    }
+  }
+  for (const item of evidence.filter((fact) => fact.association === "direct")) {
+    const candidateId = item.fromId === node.id ? item.toId : item.fromId;
+    const candidate = nodes.get(candidateId);
+    if (candidate && candidate.kind !== "chunk") {
+      nextReads.push({
+        ...referenceForNode(candidate, undefined, nodes, item),
+        reason: `Follow the direct ${item.edgeKind}/${item.provenance} graph edge.`
+      });
+    }
+  }
+  return dedupeNextReads(nextReads).sort(compareNextReads);
+}
+
+function dedupeNextReads(reads: CardNextRead[]): CardNextRead[] {
+  const deduped = new Map<string, CardNextRead>();
+  for (const read of reads) {
+    const key = `${read.nodeId}:${read.association ?? ""}:${read.originNodeId ?? ""}:${read.viaNodeId ?? ""}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, read);
+    }
+  }
+  return [...deduped.values()];
+}
+
+function compareNextReads(left: CardNextRead, right: CardNextRead): number {
+  return associationPriority(left.association) - associationPriority(right.association)
+    || compareReferences(left, right)
+    || left.reason.localeCompare(right.reason);
+}
+
+function associationPriority(value: CardAssociation | undefined): number {
+  return value === "direct" ? 0 : value === "inherited" ? 1 : 2;
+}
+
+function edgeSummaryVerb(kind: EdgeKind): string {
+  return kind === "DEFINES" ? "defines" : kind.toLowerCase().replaceAll("_", " ");
+}
+
+function referenceLocation(reference: CardReference): string {
+  const location = reference.path ?? reference.nodeId;
+  return reference.anchor ? `${location}#${reference.anchor}` : location;
 }
 
 function dedupeReferences(references: CardReference[]): CardReference[] {
   const deduped = new Map<string, CardReference>();
   for (const reference of references.sort(compareReferences)) {
-    if (!deduped.has(reference.nodeId)) {
-      deduped.set(reference.nodeId, reference);
+    const key = `${reference.nodeId}:${reference.association ?? ""}:${reference.originNodeId ?? ""}:${reference.viaNodeId ?? ""}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, reference);
     }
   }
   return [...deduped.values()];
@@ -579,7 +775,7 @@ function dedupeReferences(references: CardReference[]): CardReference[] {
 function dedupeSourceReferences(references: CardSourceReference[]): CardSourceReference[] {
   const deduped = new Map<string, CardSourceReference>();
   for (const reference of references.sort(compareSourceReferences)) {
-    const key = `${reference.nodeId}:${reference.edgeKind}`;
+    const key = `${reference.nodeId}:${reference.edgeKind}:${reference.association ?? ""}:${reference.originNodeId ?? ""}:${reference.viaNodeId ?? ""}`;
     if (!deduped.has(key)) {
       deduped.set(key, reference);
     }
@@ -588,21 +784,24 @@ function dedupeSourceReferences(references: CardSourceReference[]): CardSourceRe
 }
 
 function compareReferences(left: CardReference, right: CardReference): number {
-  return (left.path ?? "").localeCompare(right.path ?? "")
+  return associationPriority(left.association) - associationPriority(right.association)
+    || (left.path ?? "").localeCompare(right.path ?? "")
     || (left.lines?.start ?? 0) - (right.lines?.start ?? 0)
     || left.label.localeCompare(right.label)
     || left.nodeId.localeCompare(right.nodeId);
 }
 
 function compareSourceReferences(left: CardSourceReference, right: CardSourceReference): number {
-  return left.path.localeCompare(right.path)
+  return associationPriority(left.association) - associationPriority(right.association)
+    || left.path.localeCompare(right.path)
     || left.edgeKind.localeCompare(right.edgeKind)
     || left.provenance.localeCompare(right.provenance)
     || left.nodeId.localeCompare(right.nodeId);
 }
 
 function compareEvidence(left: CardEvidence, right: CardEvidence): number {
-  return edgeKindPriority(left.edgeKind) - edgeKindPriority(right.edgeKind)
+  return associationPriority(left.association) - associationPriority(right.association)
+    || edgeKindPriority(left.edgeKind) - edgeKindPriority(right.edgeKind)
     || left.fromLabel.localeCompare(right.fromLabel)
     || left.toLabel.localeCompare(right.toLabel)
     || left.edgeId.localeCompare(right.edgeId);
@@ -665,6 +864,13 @@ function formatEvidenceList(evidence: CardEvidence[]): string {
     return "Evidence: none";
   }
   return `Evidence:\n${evidence.map((item) => `- ${item.fromLabel} --${item.edgeKind}/${item.provenance}, confidence ${item.confidence}--> ${item.toLabel} [${item.edgeId}]`).join("\n")}`;
+}
+
+function formatNextReadList(nextReads: CardNextRead[]): string {
+  if (!nextReads.length) {
+    return "Next reads: none";
+  }
+  return `Next reads:\n${nextReads.map((item) => `- ${referenceLocation(item)}: ${item.reason} [${item.association ?? "related"}; ${item.nodeId}]`).join("\n")}`;
 }
 
 function nonNegativeIntegerOr(value: number | undefined, fallback: number): number {
