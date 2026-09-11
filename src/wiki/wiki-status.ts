@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { GraphRepository } from "../db/repositories.js";
-import { loadConfig } from "../config/load-config.js";
 import { buildGraphJsonExport } from "../export/graphjson.js";
-import { computeStatusFreshness, type StatusFreshness } from "../analysis/status-freshness.js";
+import { type StatusFreshness } from "../analysis/status-freshness.js";
 import { parseFrontmatterBlock } from "../parser/frontmatter.js";
 import { parseMarkdownDocument } from "../parser/markdown-parser.js";
 import { isPathInsideOrEqual, resolveInsideRoot } from "../utils/path-safety.js";
@@ -11,13 +10,12 @@ import { normalizePath, slugifyHeading, uniqueStrings } from "../utils/text.js";
 import {
   WIKI_PLAN_FORMAT_VERSION,
   WikiPlanError,
-  calculateWikiPageEvidenceHash,
   safeProjectRelativePath,
   safeWikiPagePath,
-  sourceRefFingerprint,
   type WikiPlan,
   type WikiPlanPage
 } from "./wiki-plan.js";
+import { sourceRefFingerprint, wikiContentFreshness, wikiPageEvidenceStatus } from "./wiki-evidence.js";
 
 export const WIKI_STATUS_FORMAT = "mdgraph-wiki-status" as const;
 export const WIKI_STATUS_FORMAT_VERSION = 1 as const;
@@ -99,13 +97,7 @@ export function buildWikiStatus(
   assertWikiDirectoryReadable(resolvedWikiDir);
   const currentGraph = buildGraphJsonExport(projectRoot, repository);
   const planCommand = wikiPlanRecoveryCommand(options.planPath);
-  const wikiRelativePath = isPathInsideOrEqual(projectRoot, resolvedWikiDir)
-    ? normalizePath(path.relative(projectRoot, resolvedWikiDir))
-    : undefined;
-  const indexFreshness = computeStatusFreshness(projectRoot, loadConfig(projectRoot), repository, {
-    strictContentHash: true,
-    ignorePaths: wikiRelativePath && wikiRelativePath !== "." ? [wikiRelativePath] : undefined
-  });
+  const indexFreshness = wikiContentFreshness(projectRoot, repository, { wikiDir: resolvedWikiDir });
   const planCurrent = plan.graphHash === currentGraph.graphHash
     && plan.sourceHash === currentGraph.sourceHash
     && indexFreshness.state === "fresh";
@@ -256,7 +248,8 @@ export function verifyWiki(
 export function formatWikiStatus(status: WikiStatus): string {
   const lines = [
     `Wiki status: ${status.summary.current} current, ${status.summary.needs_update} needs update, ${status.summary.missing} missing, ${status.summary.orphaned} orphaned`,
-    `Plan: ${status.plan.state}`
+    `Plan: ${status.plan.state}`,
+    `Evidence freshness: ${status.plan.indexFreshness?.state ?? "unknown"}`
   ];
   for (const page of status.pages) {
     lines.push(`- ${page.id} [${page.state}] ${page.path}`);
@@ -269,6 +262,9 @@ export function formatWikiStatus(status: WikiStatus): string {
   }
   if (status.plan.recovery) {
     lines.push(`Plan recovery: ${status.plan.recovery}`);
+  }
+  if (status.plan.indexFreshness?.state !== "fresh") {
+    lines.push(`Evidence recovery: ${status.plan.indexFreshness?.recommendation ?? "Run \`mdgraph index\`, then regenerate the Wiki plan."}`);
   }
   return lines.join("\n");
 }
@@ -325,19 +321,12 @@ function statusForPlannedPage(
   if (wikiId !== page.id) {
     return pageProblem(page, "needs_update", `Expected wiki_id ${page.id}, found ${wikiId ?? "none"}.`, `Set wiki_id to ${page.id} in ${page.path}.`);
   }
-  const staleDocumentPaths = new Set(indexFreshness.issues
-    ?.filter((issue) => issue.reason === "modified" || issue.reason === "deleted")
-    .map((issue) => issue.path) ?? []);
-  const plannedDocumentPaths = page.documentIds.flatMap((documentId) => {
-    const document = documentsById.get(documentId);
-    return document ? [document.path] : [];
-  });
-  const staleEvidencePath = plannedDocumentPaths.find((documentPath) => staleDocumentPaths.has(documentPath));
+  const evidence = wikiPageEvidenceStatus(projectRoot, repository, page, indexFreshness);
+  const staleEvidencePath = evidence.staleDocumentPaths[0];
   if (staleEvidencePath) {
     return pageProblem(page, "needs_update", `Indexed source document ${staleEvidencePath} changed on disk after indexing.`, "Run `mdgraph index`, regenerate the Wiki plan, then update this page from its new brief.");
   }
-  const currentEvidenceHash = calculateWikiPageEvidenceHash(projectRoot, repository, page);
-  if (currentEvidenceHash !== page.evidenceHash) {
+  if (evidence.currentEvidenceHash !== page.evidenceHash) {
     return pageProblem(page, "needs_update", "The page dependencies have changed since the plan was created.", planCommand);
   }
   const evidenceHash = optionalFrontmatterString(pageFile.frontmatter.evidence_hash);

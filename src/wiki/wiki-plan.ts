@@ -1,10 +1,7 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { hashCanonical } from "../bundle/bundle.js";
 import { GraphRepository } from "../db/repositories.js";
-import { computeStatusFreshness, type StatusFreshness } from "../analysis/status-freshness.js";
-import { loadConfig } from "../config/load-config.js";
+import { type StatusFreshness } from "../analysis/status-freshness.js";
 import { buildGraphJsonExport } from "../export/graphjson.js";
 import {
   buildContext,
@@ -16,8 +13,16 @@ import {
 } from "../query/knowledge-card.js";
 import type { GraphDocument, MDGraphConfig, SourceRef } from "../types.js";
 import { readBoundedJsonFile } from "../utils/bounded-json.js";
-import { isPathInsideOrEqual, resolveInsideRoot } from "../utils/path-safety.js";
 import { normalizePath, uniqueStrings } from "../utils/text.js";
+import {
+  calculateWikiPageEvidenceHash,
+  safeProjectRelativePath,
+  sourceRefFingerprint,
+  wikiContentFreshness,
+  type WikiEvidencePage
+} from "./wiki-evidence.js";
+
+export { calculateWikiPageEvidenceHash, safeProjectRelativePath, sourceRefFingerprint } from "./wiki-evidence.js";
 
 export const WIKI_PLAN_FORMAT = "mdgraph-wiki-plan" as const;
 export const WIKI_PLAN_FORMAT_VERSION = 1 as const;
@@ -107,7 +112,7 @@ interface WikiDomain {
   score(document: GraphDocument): number;
 }
 
-interface WikiPageSeed extends Omit<WikiPlanPage, "evidenceHash"> {}
+interface WikiPageSeed extends Omit<WikiPlanPage, "evidenceHash">, WikiEvidencePage {}
 
 const WIKI_DOMAINS: WikiDomain[] = [
   {
@@ -309,9 +314,9 @@ export function buildWikiPageBrief(
     "Distinguish directly evidenced behavior from conclusions that still require source verification.",
     "Keep project-relative source_docs and source_refs in front matter, and preserve wiki_id and evidence_hash.",
     "Do not overwrite or rewrite unrelated Wiki pages.",
-    currentEvidenceHash === page.evidenceHash
+    strictFreshness.state === "fresh" && currentEvidenceHash === page.evidenceHash
       ? `Set evidence_hash to ${page.evidenceHash}.`
-      : "The plan evidence is stale; regenerate the plan before finalizing this page."
+      : `Indexed Markdown evidence is ${strictFreshness.state}; run \`mdgraph index\`, regenerate the Wiki plan, then update this page from its new brief. Do not set evidence_hash from this stale plan.`
   ];
   const suggestedNextQueries = uniqueStrings([
     ...page.evidenceQueries.map((evidenceQuery) => `mdgraph context ${JSON.stringify(evidenceQuery)}`),
@@ -340,73 +345,12 @@ export function buildWikiPageBrief(
   };
 }
 
-export function calculateWikiPageEvidenceHash(
-  projectRoot: string,
-  repository: GraphRepository,
-  page: WikiPageSeed | WikiPlanPage
-): string {
-  const documentsById = new Map(repository.allDocuments().map((document) => [document.id, document]));
-  const documents = page.documentIds.map((documentId) => {
-    const document = documentsById.get(documentId);
-    return document
-      ? { id: document.id, path: document.path, hash: document.hash }
-      : { id: documentId, missing: true };
-  });
-  const sourceRefs = page.sourceRefs.map((sourceRef) => ({
-    path: sourceRef,
-    fingerprint: sourceRefFingerprint(projectRoot, sourceRef)
-  }));
-  return hashCanonical({
-    page: {
-      id: page.id,
-      title: page.title,
-      path: page.path,
-      parentId: page.parentId,
-      purpose: page.purpose,
-      audience: page.audience,
-      outline: page.outline,
-      documentIds: page.documentIds,
-      sourceRefs: page.sourceRefs,
-      evidenceQueries: page.evidenceQueries
-    },
-    documents,
-    sourceRefs
-  });
-}
-
-export function sourceRefFingerprint(projectRoot: string, sourceRef: string): string {
-  const normalized = safeProjectRelativePath(sourceRef);
-  if (!normalized) {
-    return "unsafe";
-  }
-  const resolved = resolveInsideRoot(projectRoot, normalized);
-  if (!resolved || !fs.existsSync(resolved)) {
-    return "missing";
-  }
-  const stat = fs.lstatSync(resolved);
-  if (stat.isSymbolicLink()) {
-    let realPath: string;
-    try {
-      realPath = fs.realpathSync(resolved);
-    } catch {
-      return "broken-symlink";
-    }
-    if (!isPathInsideOrEqual(projectRoot, realPath)) {
-      return "unsafe-symlink";
-    }
-  }
-  if (!stat.isFile() && !stat.isSymbolicLink()) {
-    return "not-file";
-  }
-  return hashFile(resolved);
-}
-
 export function stableWikiPlan(plan: WikiPlan): string {
   return `${JSON.stringify(plan, null, 2)}\n`;
 }
 
 function wikiStrictFreshness(projectRoot: string, repository: GraphRepository): WikiStrictFreshness {
-  const freshness = computeStatusFreshness(projectRoot, loadConfig(projectRoot), repository, { strictContentHash: true });
+  const freshness = wikiContentFreshness(projectRoot, repository);
   return {
     state: freshness.state,
     recommendation: freshness.recommendation,
@@ -432,7 +376,9 @@ export function formatWikiPageBrief(brief: WikiPageBrief): string {
     `Purpose: ${brief.page.purpose}`,
     `Audience: ${brief.page.audience}`,
     `Budget: ${brief.usedChars}/${brief.maxChars} chars`,
-    `Source documents: ${brief.sourceDocuments.length}; context items: ${brief.contextItems.length}; Knowledge Cards: ${brief.knowledgeCards.length}`,
+    `Source documents: ${brief.sourceDocuments.map((document) => document.path).join(", ") || "none"}`,
+    `Context items: ${brief.contextItems.length}; Knowledge Cards: ${brief.knowledgeCards.length}`,
+    `Evidence freshness: ${brief.strictFreshness.state}`,
     "Writing requirements:",
     ...brief.writingRequirements.map((requirement) => `- ${requirement}`),
     "Suggested next queries:",
@@ -533,22 +479,6 @@ function optionalWikiStrictFreshness(value: unknown): WikiStrictFreshness | unde
 export function safeWikiPagePath(value: string): string | undefined {
   const normalized = safeProjectRelativePath(value);
   return normalized && normalized.toLowerCase().endsWith(".md") ? normalized : undefined;
-}
-
-export function safeProjectRelativePath(value: string): string | undefined {
-  const normalized = normalizePath(value.trim()).replace(/^\.\//, "");
-  const segments = normalized.split("/");
-  if (
-    !normalized
-    || normalized.includes("\0")
-    || path.isAbsolute(normalized)
-    || path.posix.isAbsolute(normalized)
-    || /^[a-z]:\//i.test(normalized)
-    || segments.some((segment) => !segment || segment === "." || segment === "..")
-  ) {
-    return undefined;
-  }
-  return normalized;
 }
 
 function rankedDomainDocuments(domain: WikiDomain, documents: GraphDocument[]): GraphDocument[] {
@@ -717,22 +647,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function positiveIntegerOr(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : fallback;
-}
-
-function hashFile(filePath: string): string {
-  const hash = createHash("sha256");
-  const buffer = Buffer.allocUnsafe(64 * 1024);
-  const descriptor = fs.openSync(filePath, "r");
-  try {
-    let bytesRead = 0;
-    do {
-      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-      if (bytesRead > 0) {
-        hash.update(buffer.subarray(0, bytesRead));
-      }
-    } while (bytesRead > 0);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  return hash.digest("hex");
 }
