@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { loadConfig } from "./config/load-config.js";
 import { openDatabase } from "./db/connection.js";
-import { GraphRepository, type StatusCounts } from "./db/repositories.js";
+import { GraphRepository, IndexGenerationConflict, type StatusCounts } from "./db/repositories.js";
 import { buildGraphRecords } from "./extraction/graph-builder.js";
 import { parseMarkdownDocument } from "./parser/markdown-parser.js";
 import { scanMarkdownFiles } from "./scanner/file-scanner.js";
@@ -25,7 +26,28 @@ export interface IndexOptions {
 }
 
 export async function indexProject(projectRoot: string, options: IndexOptions = {}): Promise<IndexResult> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await indexProjectAttempt(projectRoot, options);
+    } catch (error) {
+      if (!(error instanceof IndexGenerationConflict) || attempt === 1) throw error;
+    }
+  }
+  throw new Error("Unreachable index retry state.");
+}
+
+async function indexProjectAttempt(projectRoot: string, options: IndexOptions): Promise<IndexResult> {
   const config = effectiveConfig(loadConfig(projectRoot), options);
+  const fingerprint = extractionFingerprint(config);
+  // Capture generation before asynchronous scan/parse/embed work. The write CAS
+  // below rejects this candidate if another index finishes while it is prepared.
+  const preflightDb = openDatabase(projectRoot);
+  let expectedGeneration: number;
+  try {
+    expectedGeneration = new GraphRepository(preflightDb).indexWriteState().generation;
+  } finally {
+    preflightDb.close();
+  }
   const files = await scanMarkdownFiles(projectRoot, config);
   const { parsed, skippedFiles } = parseScannedFiles(projectRoot, files);
   const records = buildGraphRecords(parsed, config);
@@ -33,10 +55,19 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
   try {
     const repository = new GraphRepository(db);
     const existingCounts = repository.counts();
+    const writeState = repository.indexWriteState();
     const requiresCompleteEmbedding = config.embedding.enabled && !hasMatchingVectorCoverage(repository, config, existingCounts);
-    if (options.full || existingCounts.documents === 0 || requiresCompleteEmbedding) {
-      records.vectors = await embedChunks(records.chunks, config);
-      repository.replaceAll(records);
+    const vectorProfileChanged = existingCounts.vectors > 0 && requiresCompleteEmbedding;
+    const requiresRebuild = options.full || existingCounts.documents === 0 || requiresCompleteEmbedding || writeState.extractionFingerprint !== fingerprint;
+    // A parser failure is a non-destructive condition: retain that document's last
+    // known graph until it can be parsed again, rather than turning a transient edit
+    // into a deletion during a requested rebuild.
+    if (requiresRebuild && skippedFiles.length === 0) {
+      records.vectors = await vectorsForChunks(repository, records.chunks, config);
+      if (!options.full && !vectorProfileChanged) {
+        records.edges.push(...repository.preservedDerivedEdges(records));
+      }
+      repository.replaceAll(records, { expectedGeneration, extractionFingerprint: fingerprint });
       return {
         files: files.length,
         changed: parsed.length,
@@ -61,8 +92,19 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
         .map((document) => existing.get(document.relativePath)?.id)
         .filter((existingId): existingId is string => typeof existingId === "string" && !changedIds.has(existingId));
       const changedRecords = filterRecordsForDocuments(records, changedIds);
-      changedRecords.vectors = await embedChunks(changedRecords.chunks, config);
-      repository.replaceDocuments(changedRecords, [...changedIds], [...deletedDocumentIds, ...replacedDocumentIds]);
+      changedRecords.vectors = await vectorsForChunks(repository, changedRecords.chunks, config);
+      repository.replaceDocuments(
+        changedRecords,
+        [...changedIds],
+        [...deletedDocumentIds, ...replacedDocumentIds],
+        skippedFiles.length === 0 ? records : undefined,
+        {
+          expectedGeneration,
+          // Do not mark a partial, parser-skipped candidate as a completed
+          // extraction-config rebuild. The next successful scan must retry it.
+          extractionFingerprint: requiresRebuild ? writeState.extractionFingerprint : fingerprint
+        }
+      );
     }
 
     return {
@@ -78,6 +120,27 @@ export async function indexProject(projectRoot: string, options: IndexOptions = 
   } finally {
     db.close();
   }
+}
+
+async function vectorsForChunks(repository: GraphRepository, chunks: GraphRecordSet["chunks"], config: MDGraphConfig) {
+  if (!config.embedding.enabled) return [];
+  const profile = { provider: config.embedding.provider, model: config.embedding.model, dimensions: config.embedding.dimensions };
+  const reusable = repository.reusableVectors(chunks, profile);
+  const present = new Set(reusable.map((vector) => vector.chunkId));
+  const embedded = await embedChunks(chunks.filter((chunk) => !present.has(chunk.id)), config);
+  return [...reusable, ...embedded];
+}
+
+function extractionFingerprint(config: MDGraphConfig): string {
+  const extraction = {
+    docs: config.docs,
+    index: config.index,
+    entities: {
+      enabledKinds: [...config.entities.enabledKinds].sort(),
+      stopEntities: [...config.entities.stopEntities].sort()
+    }
+  };
+  return createHash("sha256").update(JSON.stringify(extraction)).digest("hex");
 }
 
 function hasMatchingVectorCoverage(repository: GraphRepository, config: MDGraphConfig, counts: StatusCounts): boolean {

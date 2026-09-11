@@ -33,7 +33,6 @@ export async function watchProject(projectRoot: string, options: WatchProjectOpt
     health.close();
     throw error;
   }
-  const watchesMdx = config.index.parseMdx;
   const debounceMs = options.debounceMs ?? 250;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
@@ -41,6 +40,8 @@ export async function watchProject(projectRoot: string, options: WatchProjectOpt
   let closed = false;
   let ready = false;
   let activeIndex: Promise<void> | undefined;
+  let reloadInFlight: Promise<void> | undefined;
+  let reloadQueued = false;
 
   const runIndex = async (): Promise<void> => {
     if (closed) {
@@ -87,38 +88,92 @@ export async function watchProject(projectRoot: string, options: WatchProjectOpt
 
   const scheduleIndexForMarkdown = (filePath: string): void => {
     const lower = filePath.toLowerCase();
-    if (lower.endsWith(".md") || (watchesMdx && lower.endsWith(".mdx"))) {
+    if (lower.endsWith(".md") || (config.index.parseMdx && lower.endsWith(".mdx"))) {
       scheduleIndex();
     }
   };
 
-  let watcher: FSWatcher;
-  try {
-    watcher = chokidar.watch(".", {
+  const bindWatcher = (candidate: FSWatcher): void => {
+    const onFileEvent = (filePath: string): void => {
+      if (isWatchControlFile(projectRoot, filePath)) {
+        void reloadWatchRules();
+        return;
+      }
+      scheduleIndexForMarkdown(filePath);
+    };
+    candidate.on("add", onFileEvent);
+    candidate.on("change", onFileEvent);
+    candidate.on("unlink", onFileEvent);
+    candidate.on("error", (error) => {
+      if (!ready) return;
+      health.recordError(error, "runtime");
+      notifyError(options.onError, error);
+    });
+  };
+
+  const createWatcher = (nextConfig: typeof config, nextIgnored: typeof ignored): FSWatcher => {
+    const candidate = chokidar.watch(".", {
       cwd: projectRoot,
-      ignored: createWatchIgnoreMatcher(projectRoot, ignored, watchesMdx),
+      ignored: createWatchIgnoreMatcher(projectRoot, nextIgnored, nextConfig.index.parseMdx),
       ignoreInitial: true,
       persistent: true,
       usePolling: options.usePolling ?? false,
       awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 }
     });
+    bindWatcher(candidate);
+    return candidate;
+  };
+
+  let watcher: FSWatcher;
+  const reloadWatchRules = async (): Promise<void> => {
+    if (reloadInFlight) {
+      reloadQueued = true;
+      return reloadInFlight;
+    }
+    reloadInFlight = (async () => {
+      let replacement: FSWatcher | undefined;
+      try {
+        const nextConfig = loadConfig(projectRoot);
+        const nextIgnored = await resolveIgnorePatterns(projectRoot, nextConfig);
+        replacement = createWatcher(nextConfig, nextIgnored);
+        await waitForReady(replacement);
+        if (closed) {
+          await replacement.close();
+          return;
+        }
+        const previous = watcher;
+        // Keep the previous watch registered until this one is ready. Events in
+        // the overlap simply coalesce through the existing debounce queue.
+        watcher = replacement;
+        config = nextConfig;
+        ignored = nextIgnored;
+        await previous.close();
+        scheduleIndex();
+      } catch (error) {
+        await replacement?.close();
+        // Invalid transient config must not drop the current watcher. A later
+        // valid write will retry this path and index success restores health.
+        health.recordError(error, "indexing");
+        notifyError(options.onError, error);
+      } finally {
+        reloadInFlight = undefined;
+        if (reloadQueued && !closed) {
+          reloadQueued = false;
+          void reloadWatchRules();
+        }
+      }
+    })();
+    return reloadInFlight;
+  };
+
+  try {
+    watcher = createWatcher(config, ignored);
   } catch (error) {
     health.recordError(error, "startup");
     notifyError(options.onError, error);
     health.close();
     throw error;
   }
-
-  watcher.on("add", scheduleIndexForMarkdown);
-  watcher.on("change", scheduleIndexForMarkdown);
-  watcher.on("unlink", scheduleIndexForMarkdown);
-  watcher.on("error", (error) => {
-    if (!ready) {
-      return;
-    }
-    health.recordError(error, "runtime");
-    notifyError(options.onError, error);
-  });
 
   try {
     await waitForReady(watcher);
@@ -146,6 +201,9 @@ export async function watchProject(projectRoot: string, options: WatchProjectOpt
         if (activeIndex) {
           await activeIndex;
         }
+        if (reloadInFlight) {
+          await reloadInFlight;
+        }
       } finally {
         await watcher.close();
         health.close();
@@ -164,6 +222,11 @@ function createWatchIgnoreMatcher(projectRoot: string, patterns: readonly string
     }
 
     const normalizedPath = relativePath.split(path.sep).join("/");
+    // Keep the directory traversable so chokidar can observe config.json even
+    // though normal MDGraph artifacts remain ignored below it.
+    if (normalizedPath === ".mdgraph" || isWatchControlFile(projectRoot, absolutePath)) {
+      return false;
+    }
     if (patterns.some((pattern) => (
       path.matchesGlob(normalizedPath, pattern)
       || path.matchesGlob(`${normalizedPath}/`, pattern)
@@ -177,6 +240,12 @@ function createWatchIgnoreMatcher(projectRoot: string, patterns: readonly string
     }
     return false;
   };
+}
+
+function isWatchControlFile(projectRoot: string, candidatePath: string): boolean {
+  const absolutePath = path.isAbsolute(candidatePath) ? candidatePath : path.resolve(projectRoot, candidatePath);
+  const relativePath = path.relative(projectRoot, absolutePath).split(path.sep).join("/");
+  return relativePath === ".gitignore" || relativePath === ".mdgraph/config.json";
 }
 
 function notifyIndexed(onIndexed: WatchProjectOptions["onIndexed"], result: IndexResult): void {
