@@ -180,7 +180,7 @@ describe("regression coverage", () => {
       const debugContext = buildContext(repository, config, "AuthService RedisTimeoutError", { debug: true });
       expect(context.usedChars).toBeLessThanOrEqual(context.maxChars);
       expect(context.items.length).toBeGreaterThan(0);
-      expect(context.items.reduce((sum, item) => sum + item.content.length, 0)).toBe(context.usedChars);
+      expect(context.items.reduce((sum, item) => sum + item.content.length + (item.cardSummary?.length ?? 0), 0)).toBe(context.usedChars);
       expect(debugContext.debug?.budgetTruncatedItems).toBeGreaterThan(0);
     } finally {
       repository.close();

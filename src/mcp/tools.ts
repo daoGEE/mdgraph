@@ -13,6 +13,7 @@ import {
   type ContextPackingStrategy,
   type ContextResult
 } from "../query/context-builder.js";
+import { buildKnowledgeCard, formatKnowledgeCard, type KnowledgeCard } from "../query/knowledge-card.js";
 import { explainSearchGraphAsync, searchGraph } from "../query/search.js";
 import { traceNodes, type TraceResult } from "../query/trace.js";
 import type { MDGraphConfig, SearchResult } from "../types.js";
@@ -208,7 +209,9 @@ export class ToolHandler {
           if (resolution.status === "ambiguous") {
             return withFreshnessNotice(textResult(formatAmbiguousNodeQuery(resolution), { projectRoot, query, error: resolution.error, candidates: resolution.candidates, node: null }), freshness);
           }
-          return withFreshnessNotice(textResult(formatNode(resolution.node, repository), { projectRoot, node: resolution.node }), freshness);
+          const card = buildKnowledgeCard(repository, resolution.node);
+          const node = card ? { ...resolution.node, card } : resolution.node;
+          return withFreshnessNotice(textResult(formatNode(resolution.node, repository, card), { projectRoot, node }), freshness);
         });
       case "mdgraph_trace":
         return this.withRepository(projectRoot, (repository) => {
@@ -546,7 +549,8 @@ function formatContext(context: ContextResult): string {
     const entities = item.matchedEntities.length ? `\nMatched entities: ${item.matchedEntities.join(", ")}` : "";
     const sourceRefs = item.sourceRefs?.length ? `\nSource refs: ${item.sourceRefs.map((sourceRef) => `${sourceRef.path} (${sourceRef.edgeKind}/${sourceRef.provenance}, confidence ${sourceRef.confidence})`).join(", ")}` : "";
     const riskNotes = item.riskNotes?.length ? `\nRisk notes: ${item.riskNotes.join("; ")}` : "";
-    return `## ${index + 1}. ${item.path}${line}\nReason: ${item.reason}${entities}${sourceRefs}${riskNotes}\n${heading}\n${item.content}`;
+    const cardSummary = item.cardSummary ? `\nKnowledge Card: ${item.cardSummary}` : "";
+    return `## ${index + 1}. ${item.path}${line}\nReason: ${item.reason}${entities}${sourceRefs}${riskNotes}${cardSummary}\n${heading}\n${item.content}`;
   });
   const hints = [
     context.mode ? `Mode: ${context.mode.name} (searchLimit ${context.mode.searchLimit}, maxDepth ${context.mode.maxDepth}; ${context.mode.reason})` : "",
@@ -556,7 +560,7 @@ function formatContext(context: ContextResult): string {
   return [header, ...hints, ...items].join("\n\n");
 }
 
-function formatNode(node: NodeRecord, repository: GraphRepository): string {
+function formatNode(node: NodeRecord, repository: GraphRepository, card?: KnowledgeCard): string {
   const edges = repository.edgesForNode(node.id).slice(0, 12);
   const related = edges.map((edge) => {
     const otherId = edge.fromId === node.id ? edge.toId : edge.fromId;
@@ -566,8 +570,9 @@ function formatNode(node: NodeRecord, repository: GraphRepository): string {
   return [
     `${node.kind}: ${node.label}`,
     JSON.stringify(node.data, null, 2),
-    related.length ? `Related edges:\n${related.join("\n")}` : "Related edges: none"
-  ].join("\n\n");
+    related.length ? `Related edges:\n${related.join("\n")}` : "Related edges: none",
+    card ? formatKnowledgeCard(card) : ""
+  ].filter(Boolean).join("\n\n");
 }
 
 function formatAmbiguousNodeQuery(resolution: Extract<NodeResolution, { status: "ambiguous" }>): string {

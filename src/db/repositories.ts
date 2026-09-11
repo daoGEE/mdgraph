@@ -110,6 +110,10 @@ export interface ChunkSearchRow {
   rank: number;
 }
 
+export interface EntityDefinitionSearchRow extends ChunkSearchRow {
+  entityId: string;
+}
+
 export interface NodeRecord {
   id: string;
   label: string;
@@ -396,7 +400,7 @@ export class GraphRepository {
     return frequencies;
   }
 
-  findEntityDefinitions(entityIds: string[]): ChunkSearchRow[] {
+  findEntityDefinitions(entityIds: string[]): EntityDefinitionSearchRow[] {
     if (!entityIds.length) {
       return [];
     }
@@ -407,7 +411,7 @@ export class GraphRepository {
         d.indexed_at AS d_indexed_at, d.metadata_json AS d_metadata_json,
         s.id AS s_id, s.document_id AS s_document_id, s.anchor AS s_anchor, s.heading AS s_heading,
         s.level AS s_level, s.start_line AS s_start_line, s.end_line AS s_end_line, s.content AS s_content,
-        e.weight AS rank
+        e.weight AS rank, e.to_id AS entity_id
       FROM edges e
       LEFT JOIN sections s ON s.id = e.from_id
       JOIN documents d ON d.id = COALESCE(s.document_id, e.from_id)
@@ -421,7 +425,8 @@ export class GraphRepository {
       document: rowToDocument(row, "d_"),
       section: row.s_id ? rowToSection(row, "s_") : undefined,
       chunk: definitionChunk(row, sectionChunk, documentChunk),
-      rank: numberValue(row.rank)
+      rank: numberValue(row.rank),
+      entityId: stringValue(row.entity_id)
     })));
   }
 

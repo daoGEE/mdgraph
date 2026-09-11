@@ -110,3 +110,9 @@ lambda * queryRelevance - (1 - lambda) * maximumSimilarityToSelected
 - MMR 在仓库 fixture 上降低了实测冗余，但最佳 lambda 和相似度阈值仍取决于语料。
 
 公开 `eval` 命令、回归套件和证据边界见[评估](Evaluation_Questions.md)。索引新鲜度与 provider 故障恢复见[运行与故障处理](Operations.md)。
+
+## 精确实体查询与知识卡片
+
+Search 先按规范化后的完整查询匹配已索引实体，包含中文名称和小写配置键。只在 front matter 中声明的定义也会返回命中实体，不要求正文重复名称。
+
+`node` 结果包含确定性的 Knowledge Card，保留稳定节点 ID、定义、源码引用、关系与证据。卡片 `maxChars` 按序列化 JSON 字符数计算，默认 4,000。可选列表和展示文本裁剪时保留遗漏计数或 `…`，节点身份不变。预算不足以表示必需结构及截断说明时明确报错。Context 仅在剩余文本预算能容纳完整摘要时附加卡片摘要，不改变已经装入的 Markdown 正文。

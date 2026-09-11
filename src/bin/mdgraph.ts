@@ -24,6 +24,7 @@ import {
   type ContextPackingStrategy
 } from "../query/context-builder.js";
 import { explainSearchGraph, explainSearchGraphAsync, searchGraph } from "../query/search.js";
+import { buildKnowledgeCard, formatKnowledgeCard, type KnowledgeCard } from "../query/knowledge-card.js";
 import { traceNodes } from "../query/trace.js";
 import { executeStructuredQuery, type StructuredQueryResult } from "../query/structured-query-executor.js";
 import {
@@ -202,7 +203,8 @@ program
     const repository = openRepository(projectRootFromOption(options.path));
     try {
       const resolution = repository.resolveNodeDetailed(query);
-      printResult(options.json, nodeResolutionJson(resolution), formatNodeResolution(resolution));
+      const card = resolution.status === "found" ? buildKnowledgeCard(repository, resolution.node) : undefined;
+      printResult(options.json, nodeResolutionJson(resolution, card), formatNodeResolution(resolution, card));
     } finally {
       closeRepository(repository);
     }
@@ -832,7 +834,8 @@ function formatContext(context: ReturnType<typeof buildContext>): string {
     .map((item, index) => {
       const heading = item.heading ? `# ${item.heading}` : item.title;
       const lines = item.lines ? `:${item.lines.start}` : "";
-      return `## ${index + 1}. ${item.path}${lines}\nReason: ${item.reason}\n${heading}\n${item.content}`;
+      const cardSummary = item.cardSummary ? `\nKnowledge Card: ${item.cardSummary}` : "";
+      return `## ${index + 1}. ${item.path}${lines}\nReason: ${item.reason}${cardSummary}\n${heading}\n${item.content}`;
     })
     .join("\n\n");
   if (!context.debug) {
@@ -996,9 +999,9 @@ function formatMetric(value: number): string {
   return value.toFixed(2);
 }
 
-function nodeResolutionJson(resolution: NodeResolution): unknown {
+function nodeResolutionJson(resolution: NodeResolution, card?: KnowledgeCard): unknown {
   if (resolution.status === "found") {
-    return resolution.node;
+    return card ? { ...resolution.node, card } : resolution.node;
   }
   if (resolution.status === "ambiguous") {
     return { error: resolution.error, query: resolution.query, candidates: resolution.candidates };
@@ -1006,9 +1009,12 @@ function nodeResolutionJson(resolution: NodeResolution): unknown {
   return { error: resolution.error, query: resolution.query };
 }
 
-function formatNodeResolution(resolution: NodeResolution): string {
+function formatNodeResolution(resolution: NodeResolution, card?: KnowledgeCard): string {
   if (resolution.status === "found") {
-    return `${resolution.node.kind}: ${resolution.node.label}`;
+    return [
+      `${resolution.node.kind}: ${resolution.node.label}`,
+      card ? formatKnowledgeCard(card) : ""
+    ].filter(Boolean).join("\n\n");
   }
   if (resolution.status === "ambiguous") {
     const candidates = resolution.candidates

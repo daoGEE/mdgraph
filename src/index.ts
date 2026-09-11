@@ -32,6 +32,21 @@ export type {
   ContextPackingStrategy,
   ContextResult
 } from "./query/context-builder.js";
+export {
+  DEFAULT_KNOWLEDGE_CARD_LIMITS,
+  buildKnowledgeCard,
+  createKnowledgeCardBuilder,
+  formatKnowledgeCard
+} from "./query/knowledge-card.js";
+export type {
+  CardEvidence,
+  CardReference,
+  CardSourceReference,
+  KnowledgeCard,
+  KnowledgeCardBuilder,
+  KnowledgeCardNodeKind,
+  KnowledgeCardOptions
+} from "./query/knowledge-card.js";
 export { explainSearchGraph, explainSearchGraphAsync, searchGraph, searchGraphAsync } from "./query/search.js";
 export { traceNodes } from "./query/trace.js";
 export { executeStructuredQuery, StructuredQueryExecutionError } from "./query/structured-query-executor.js";

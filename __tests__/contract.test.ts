@@ -213,9 +213,23 @@ describe("public contracts", () => {
         path: expect.any(String),
         reason: expect.any(String)
       }));
+      expect(context.items.some((item) => item.cardSummary)).toBe(true);
+      expect(context.usedChars).toBe(context.items.reduce(
+        (sum, item) => sum + item.content.length + (item.cardSummary?.length ?? 0),
+        0
+      ));
 
       const node = repository.resolveNodeDetailed("AuthService");
       expect(node).toMatchObject({ status: "found", node: expect.objectContaining({ id: expect.any(String), label: "AuthService", kind: "entity", data: expect.any(Object) }) });
+
+      const cliNode = JSON.parse(runCli(["node", "AuthService", "--json", "--path", root], { expectExit: 0 }).stdout) as Record<string, unknown>;
+      expect(cliNode).toMatchObject({
+        id: expect.any(String),
+        label: "AuthService",
+        kind: "entity",
+        data: expect.any(Object),
+        card: expect.objectContaining({ kind: "entity", summary: expect.stringContaining("AuthService"), evidence: expect.any(Array) })
+      });
 
       const trace = traceNodes(repository, "AuthService", "RedisTimeoutError", 6);
       expect(trace).toEqual(expect.objectContaining({ from: "AuthService", to: "RedisTimeoutError", found: true, steps: expect.any(Array) }));
