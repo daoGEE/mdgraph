@@ -25,9 +25,7 @@ coverage/
 workspaceStorage/
 GitHub.copilot-chat/
 debug-logs/
-.qoder/better-harness/2026-09-06/155818-mdgraph/canvas.json
-.qoder/better-harness/2026-09-06/155818-mdgraph/findings.json
-.qoder/better-harness/2026-09-06/155818-mdgraph/report.canvas.tsx
+.qoder/
 chat-session-resources/
 .VSCode/
 /tests
