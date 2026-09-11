@@ -6,7 +6,7 @@ import { errorMessage, initializeErrorMessage, internalToolErrorMessage, mcpDebu
 import { SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_UNINDEXED } from "./server-instructions.js";
 import { McpInputError, ToolHandler, hasIndex, tools } from "./tools.js";
 import { packageVersion } from "../version.js";
-import { isPathInsideOrEqual } from "../utils/path-safety.js";
+import { assertProjectFilesInsideRoot, isPathInsideOrEqual } from "../utils/path-safety.js";
 import { watchProject, type WatchHandle } from "../watcher/file-watcher.js";
 
 export const PROTOCOL_VERSION = "2024-11-05";
@@ -32,8 +32,8 @@ export class MCPServer {
   private watchRoot: string | undefined;
 
   constructor(private readonly transport: JsonRpcTransport, options: MCPServerOptions = {}) {
-    this.boundProjectRoot = validatedProjectRoot(path.resolve(options.projectRoot ?? process.cwd()));
-    this.projectRoot = this.boundProjectRoot;
+    this.boundProjectRoot = fs.realpathSync(validatedProjectRoot(path.resolve(options.projectRoot ?? process.cwd())));
+    this.projectRoot = validatedProjectRoot(path.resolve(options.projectRoot ?? process.cwd()));
     this.toolHandler = this.createToolHandler(this.projectRoot);
     this.watchEnabled = options.watch ?? true;
     this.watchSemantic = options.semantic;
@@ -112,7 +112,8 @@ export class MCPServer {
     let projectRoot: string;
     try {
       projectRoot = validatedProjectRoot(projectRootFromInitialize(request.params) ?? this.projectRoot);
-      if (!isPathInsideOrEqual(this.boundProjectRoot, projectRoot)) {
+      assertProjectFilesInsideRoot(this.boundProjectRoot, projectRoot);
+      if (!isPathInsideOrEqual(this.boundProjectRoot, fs.realpathSync(projectRoot))) {
         throw new Error(`Initialize root must stay inside served project root: ${this.boundProjectRoot}`);
       }
     } catch (error) {

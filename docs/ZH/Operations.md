@@ -89,3 +89,9 @@ mdgraph semantic status --path /path/to/project
 - `.mdgraph/config.json` 不含凭据时可以跟踪；MDGraph 会拒绝 endpoint URL 中嵌入的凭据。
 - 结构化交换应使用已记录的 GraphJSON，不要依赖 SQLite 内部结构。
 - 发布 MDGraph 本身前，运行[发布清单](Release_Checklist.md)，检查 `npm pack --dry-run --json`，并实际验证 packed package，不要假设仓库内容等同于 npm 内容。
+
+## 服务目录与嵌入请求超时
+
+MCP 按项目目录、配置和 SQLite 存储的实际文件目标检查访问范围。指向服务目录内部的链接仍可使用，也可以通过目录链接启动服务。访问外部项目时，请使用该项目的 `--path` 单独启动服务；服务目录内的链接不会自动授权访问外部目标。
+
+`embedding.timeoutMs` 覆盖响应头与完整正文读取，包括错误响应。超时后 search/context 回退到全文与图谱检索；索引失败保留原有图谱。服务恢复后可以重试。

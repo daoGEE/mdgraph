@@ -89,3 +89,9 @@ Derived `RELATED_TO` edges are disposable, non-authoritative state. Changes to a
 - Keep `.mdgraph/config.json` trackable when it contains no credentials; endpoint URLs with embedded credentials are rejected.
 - Use GraphJSON for the documented structural exchange format instead of depending on SQLite internals.
 - Before publishing MDGraph itself, run the [Release Checklist](Release_Checklist.md), inspect `npm pack --dry-run --json`, and verify the packed package rather than assuming repository contents equal npm contents.
+
+## Served roots and embedding deadlines
+
+MCP checks the real filesystem targets of project roots, configuration, and SQLite storage. Links within the served root remain usable, including starting the server through a linked root. To access an external project, start a separate server with `--path` pointing to that project. A link inside the served root does not grant access to an external target.
+
+`embedding.timeoutMs` covers response headers and the complete response body, including error responses. A timeout degrades search/context to lexical and graph retrieval; an indexing failure preserves the previous graph. Retry after the local service recovers.

@@ -16,7 +16,7 @@ import {
 import { explainSearchGraphAsync, searchGraph } from "../query/search.js";
 import { traceNodes, type TraceResult } from "../query/trace.js";
 import type { MDGraphConfig, SearchResult } from "../types.js";
-import { isPathInsideOrEqual } from "../utils/path-safety.js";
+import { assertProjectFilesInsideRoot, isPathInsideOrEqual } from "../utils/path-safety.js";
 import type { WatchHealthSnapshot } from "../watcher/watch-health.js";
 
 export interface McpToolDefinition {
@@ -129,9 +129,10 @@ export class ToolHandler {
     boundProjectRoot = defaultProjectRoot,
     private readonly watchHealthProvider?: (projectRoot: string) => WatchHealthSnapshot | undefined
   ) {
-    this.boundProjectRoot = validatedProjectRoot(path.resolve(boundProjectRoot));
+    this.boundProjectRoot = fs.realpathSync(validatedProjectRoot(path.resolve(boundProjectRoot)));
     this.defaultProjectRoot = validatedProjectRoot(path.resolve(defaultProjectRoot));
-    if (!isPathInsideOrEqual(this.boundProjectRoot, this.defaultProjectRoot)) {
+    assertProjectFilesInsideRoot(this.boundProjectRoot, this.defaultProjectRoot);
+    if (!isPathInsideOrEqual(this.boundProjectRoot, fs.realpathSync(this.defaultProjectRoot))) {
       throw new McpInputError(`Default project root must stay inside served root: ${this.boundProjectRoot}`);
     }
   }
@@ -283,6 +284,7 @@ export class ToolHandler {
   }
 
   private withRepository(projectRoot: string, fn: (repository: GraphRepository) => McpToolResult): McpToolResult {
+    assertProjectFilesInsideRoot(this.boundProjectRoot, projectRoot);
     const repository = new GraphRepository(openExistingDatabase(projectRoot));
     try {
       return fn(repository);
@@ -292,6 +294,7 @@ export class ToolHandler {
   }
 
   private async withRepositoryAsync(projectRoot: string, fn: (repository: GraphRepository) => Promise<McpToolResult>): Promise<McpToolResult> {
+    assertProjectFilesInsideRoot(this.boundProjectRoot, projectRoot);
     const repository = new GraphRepository(openExistingDatabase(projectRoot));
     try {
       return await fn(repository);
@@ -617,7 +620,12 @@ function validatedProjectRoot(projectRoot: string): string {
 
 function validatedBoundProjectRoot(projectRoot: string, boundProjectRoot: string): string {
   const resolved = validatedProjectRoot(projectRoot);
-  if (!isPathInsideOrEqual(boundProjectRoot, resolved)) {
+  try {
+    assertProjectFilesInsideRoot(boundProjectRoot, resolved);
+  } catch (error) {
+    throw new McpInputError(error instanceof Error ? error.message : String(error));
+  }
+  if (!isPathInsideOrEqual(boundProjectRoot, fs.realpathSync(resolved))) {
     throw new McpInputError(`projectPath must stay inside served project root: ${boundProjectRoot}`);
   }
   return resolved;
