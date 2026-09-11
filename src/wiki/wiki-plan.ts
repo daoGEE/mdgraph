@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { hashCanonical } from "../bundle/bundle.js";
 import { GraphRepository } from "../db/repositories.js";
 import { type StatusFreshness } from "../analysis/status-freshness.js";
 import { buildGraphJsonExport } from "../export/graphjson.js";
@@ -21,11 +22,12 @@ import {
   wikiContentFreshness,
   type WikiEvidencePage
 } from "./wiki-evidence.js";
+import { WIKI_DOMAINS as DOMAIN_TEMPLATES, type WikiDomain } from "./wiki-domains.js";
 
 export { calculateWikiPageEvidenceHash, safeProjectRelativePath, sourceRefFingerprint } from "./wiki-evidence.js";
 
 export const WIKI_PLAN_FORMAT = "mdgraph-wiki-plan" as const;
-export const WIKI_PLAN_FORMAT_VERSION = 1 as const;
+export const WIKI_PLAN_FORMAT_VERSION = 2 as const;
 export const WIKI_PAGE_BRIEF_FORMAT = "mdgraph-wiki-page-brief" as const;
 export const WIKI_PAGE_BRIEF_FORMAT_VERSION = 1 as const;
 const MAX_DOMAIN_SEEDS = 8;
@@ -34,12 +36,28 @@ const MAX_BRIEF_CARDS = 8;
 
 export interface WikiPlan {
   format: typeof WIKI_PLAN_FORMAT;
-  formatVersion: typeof WIKI_PLAN_FORMAT_VERSION;
+  formatVersion: 1 | typeof WIKI_PLAN_FORMAT_VERSION;
   graphHash: string;
   sourceHash: string;
+  /** v2 records the project-relative generated Wiki root. */
+  wikiDir?: string;
   /** Additive strict Markdown content evidence for deciding whether to use this plan. */
   strictFreshness?: WikiStrictFreshness;
   pages: WikiPlanPage[];
+  suggestions?: WikiPlanSuggestions;
+  gaps?: WikiPlanGap[];
+}
+
+export interface WikiPlanSuggestions {
+  pages: WikiPlanPage[];
+  sources: Array<{ pageId: string; documentIds: string[]; sourceRefs: string[] }>;
+}
+
+export interface WikiPlanGap { kind: "document" | "source_ref" | "domain"; path?: string; reason: string; recovery: string; }
+
+export interface WikiPlanOptions {
+  from?: WikiPlan;
+  wikiDir?: string;
 }
 
 export interface WikiStrictFreshness {
@@ -60,6 +78,13 @@ export interface WikiPlanPage {
   sourceRefs: string[];
   evidenceQueries: string[];
   evidenceHash: string;
+  dependencySnapshot?: WikiDependencySnapshot;
+  gaps?: WikiPlanGap[];
+}
+
+export interface WikiDependencySnapshot {
+  documents: Array<{ id: string; path?: string; hash?: string; missing?: true }>;
+  sourceRefs: Array<{ path: string; fingerprint: string }>;
 }
 
 export interface WikiPageBrief {
@@ -101,114 +126,20 @@ export class WikiPlanError extends Error {
   }
 }
 
-interface WikiDomain {
-  id: string;
-  title: string;
-  path: string;
-  purpose: string;
-  audience: string;
-  outline: string[];
-  evidenceQueries: string[];
-  score(document: GraphDocument): number;
-}
-
 interface WikiPageSeed extends Omit<WikiPlanPage, "evidenceHash">, WikiEvidencePage {}
 
-const WIKI_DOMAINS: WikiDomain[] = [
-  {
-    id: "project-overview",
-    title: "Project Overview",
-    path: "index.md",
-    purpose: "Explain the product boundary, core concepts, installation path, and the shortest successful workflow.",
-    audience: "New users and coding agents evaluating or starting with the project.",
-    outline: ["What the project is", "Core concepts", "Install and index", "First useful query", "Next steps"],
-    evidenceQueries: ["product positioning and non-goals", "installation indexing first query"],
-    score(document) {
-      const text = documentText(document);
-      return basenameScore(document.path, ["readme.md", "readme-zh.md"], 12)
-        + keywordScore(text, ["overview", "introduction", "getting started", "quickstart", "project overview", "项目概览", "快速开始"], 4)
-        + (document.path.split("/").length === 1 ? 2 : 0);
-    }
-  },
-  {
-    id: "architecture",
-    title: "Architecture",
-    path: "architecture.md",
-    purpose: "Describe implemented module boundaries, data flow, architectural decisions, and important tradeoffs.",
-    audience: "Maintainers and contributors changing cross-module behavior.",
-    outline: ["System boundary", "Module map", "Data and query flow", "Key decisions", "Tradeoffs and extension points"],
-    evidenceQueries: ["implemented architecture module boundaries", "architecture decisions and tradeoffs"],
-    score(document) {
-      const text = documentText(document);
-      return (document.type === "adr" ? 8 : document.type === "design" ? 5 : 0)
-        + keywordScore(text, ["architecture", "architectural", " adr", "decision", "design", "架构", "设计", "决策"], 3);
-    }
-  },
-  {
-    id: "core-workflows",
-    title: "Core Workflows",
-    path: "core-workflows.md",
-    purpose: "Explain the main end-to-end user and agent workflows with their evidence and source entry points.",
-    audience: "Users and coding agents applying the project to real work.",
-    outline: ["Indexing workflow", "Retrieval workflow", "Graph navigation", "Agent integration", "Workflow boundaries"],
-    evidenceQueries: ["core indexing and retrieval workflows", "agent search context node trace workflow"],
-    score(document) {
-      return keywordScore(documentText(document), [
-        "workflow", "retrieval", "context", "indexing", "search", "trace", "query", "relationship", "工作流", "检索", "索引", "查询"
-      ], 3) + (document.type === "spec" ? 2 : 0);
-    }
-  },
-  {
-    id: "development",
-    title: "Development Guide",
-    path: "development.md",
-    purpose: "Give contributors the commands, conventions, test strategy, and repository boundaries needed to make safe changes.",
-    audience: "Contributors and maintainers implementing or reviewing changes.",
-    outline: ["Development setup", "Repository conventions", "Build and test", "Change workflow", "Contribution checks"],
-    evidenceQueries: ["development setup build test commands", "contribution conventions and repository boundaries"],
-    score(document) {
-      const text = documentText(document);
-      return basenameScore(document.path, ["agents.md", "contributing.md"], 10)
-        + keywordScore(text, ["development", "contributing", "build", "testing", "setup", "configuration", "开发", "贡献", "测试", "配置"], 3);
-    }
-  },
-  {
-    id: "operations",
-    title: "Operations and Troubleshooting",
-    path: "operations.md",
-    purpose: "Explain runtime operation, diagnostics, failure recovery, freshness, and provider or watcher troubleshooting.",
-    audience: "Users and maintainers diagnosing an unhealthy or stale project workflow.",
-    outline: ["Operational model", "Freshness and watch", "Diagnostics", "Common failures", "Recovery paths"],
-    evidenceQueries: ["operations troubleshooting doctor freshness", "watch provider failure recovery"],
-    score(document) {
-      const text = documentText(document);
-      return (document.type === "runbook" || document.type === "incident" ? 8 : 0)
-        + keywordScore(text, ["operations", "runbook", "incident", "troubleshoot", "doctor", "watch", "provider", "release", "运行", "排障", "故障", "诊断"], 3);
-    }
-  },
-  {
-    id: "reference",
-    title: "Reference",
-    path: "reference.md",
-    purpose: "Collect stable command, MCP, configuration, API, and output contracts without duplicating implementation prose.",
-    audience: "Users and tool authors who need exact public names, inputs, outputs, and compatibility boundaries.",
-    outline: ["CLI reference", "MCP tools", "Configuration", "Output contracts", "Compatibility status"],
-    evidenceQueries: ["CLI MCP API configuration reference", "public output contracts and compatibility"],
-    score(document) {
-      return (document.type === "api" ? 7 : 0)
-        + keywordScore(documentText(document), ["reference", " cli", "mcp", " api", "configuration", "output contract", "public contract", "参考", "命令", "公开契约"], 3);
-    }
-  }
-];
-
-export function buildWikiPlan(projectRoot: string, repository: GraphRepository): WikiPlan {
+export function buildWikiPlan(projectRoot: string, repository: GraphRepository, options: WikiPlanOptions = {}): WikiPlan {
   const graph = buildGraphJsonExport(projectRoot, repository);
-  const strictFreshness = wikiStrictFreshness(projectRoot, repository);
-  const documents = repository.allDocuments();
+  const wikiDir = resolveWikiDir(projectRoot, options.wikiDir ?? options.from?.wikiDir ?? "wiki");
+  if (options.from?.formatVersion === 1 && !options.wikiDir) {
+    throw new WikiPlanError("wiki.plan_wiki_dir", "A v1 plan does not record wikiDir.", "Pass --wiki-dir <project-relative-directory> when updating this plan.");
+  }
+  const strictFreshness = wikiStrictFreshness(projectRoot, repository, wikiDir);
+  const documents = repository.allDocuments().filter((document) => !isUnderWikiDir(document.path, wikiDir));
   const documentsById = new Map(documents.map((document) => [document.id, document]));
   const relatedDocuments = relatedDocumentIdsByDocument(repository);
   const sourceRefsByDocument = sourceRefsByDocumentId(repository);
-  const selectedByDomain = WIKI_DOMAINS.map((domain) => ({
+  const selectedByDomain = DOMAIN_TEMPLATES.map((domain) => ({
     domain,
     documents: expandDomainDocuments(rankedDomainDocuments(domain, documents), documentsById, relatedDocuments)
   }));
@@ -216,7 +147,9 @@ export function buildWikiPlan(projectRoot: string, repository: GraphRepository):
     selectedByDomain[0].documents = [documents.slice().sort(compareDocuments)[0]];
   }
   const hasOverview = selectedByDomain[0].documents.length > 0;
-  const pages = selectedByDomain
+  const suggestedPages: WikiPlanSuggestions["pages"] = [];
+  const suggestedSources: WikiPlanSuggestions["sources"] = [];
+  const generated = selectedByDomain
     .filter((entry) => entry.documents.length > 0)
     .map(({ domain, documents: domainDocuments }): WikiPlanPage => {
       const documentIds = domainDocuments.map((document) => document.id);
@@ -228,23 +161,29 @@ export function buildWikiPlan(projectRoot: string, repository: GraphRepository):
         parentId: domain.id !== "project-overview" && hasOverview ? "project-overview" : undefined,
         purpose: domain.purpose,
         audience: domain.audience,
-        outline: [...domain.outline],
+        outline: uniqueStrings([...domain.outline, ...domainDocuments.slice(0, 2).map((document) => document.title)]),
         documentIds,
         sourceRefs,
-        evidenceQueries: [...domain.evidenceQueries]
+        evidenceQueries: uniqueStrings([...domain.evidenceQueries, ...domainDocuments.slice(0, 2).map((document) => document.title)])
       };
       return {
         ...seed,
-        evidenceHash: calculateWikiPageEvidenceHash(projectRoot, repository, seed)
+        evidenceHash: calculateWikiPageEvidenceHash(projectRoot, repository, seed),
+        dependencySnapshot: dependencySnapshot(projectRoot, repository, seed),
+        gaps: pageGaps(projectRoot, repository, seed, wikiDir)
       };
     });
+  const pages = options.from ? mergePlanPages(projectRoot, repository, options.from, generated, suggestedPages, suggestedSources, wikiDir) : generated;
   return {
     format: WIKI_PLAN_FORMAT,
     formatVersion: WIKI_PLAN_FORMAT_VERSION,
     graphHash: graph.graphHash,
-    sourceHash: graph.sourceHash,
+    sourceHash: wikiSourceHash(repository, wikiDir),
+    wikiDir,
     strictFreshness,
-    pages
+    pages,
+    suggestions: { pages: suggestedPages, sources: suggestedSources },
+    gaps: [...pages.flatMap((page) => page.gaps ?? []), ...selectedByDomain.filter((entry) => !entry.documents.length).map(({ domain }): WikiPlanGap => ({ kind: "domain", reason: `No indexed evidence supports the ${domain.title} candidate.`, recovery: "Add relevant project documentation and refresh the plan when this page is needed." }))]
   };
 }
 
@@ -266,9 +205,10 @@ export function buildWikiPageBrief(
   }
   const maxChars = positiveIntegerOr(options.maxChars, config.search.maxContextChars);
   const documentsById = new Map(repository.allDocuments().map((document) => [document.id, document]));
+  const wikiDir = plan.wikiDir ?? "wiki";
   const plannedDocuments = page.documentIds.flatMap((documentId) => {
     const document = documentsById.get(documentId);
-    return document ? [document] : [];
+    return document && !isUnderWikiDir(document.path, wikiDir) ? [document] : [];
   });
   const knownFiles = uniqueStrings([
     ...plannedDocuments.map((document) => document.path),
@@ -282,13 +222,15 @@ export function buildWikiPageBrief(
     searchLimit: Math.max(config.search.defaultLimit * 2, 16),
     maxDepth: config.search.maxDepth
   });
+  const contextItems = context.items.filter((item) => !isUnderWikiDir(item.path, wikiDir));
   const builder = createKnowledgeCardBuilder(repository);
+  const wikiDocumentIds = new Set(repository.allDocuments().filter((document) => isUnderWikiDir(document.path, wikiDir)).map((document) => document.id));
   const cardNodeIds = uniqueStrings([
     ...page.documentIds,
-    ...context.items.map((item) => item.nodeId)
-  ]);
+    ...contextItems.map((item) => item.nodeId)
+  ]).filter((nodeId) => !wikiDocumentIds.has(nodeId));
   const knowledgeCards: KnowledgeCard[] = [];
-  let usedChars = context.usedChars;
+  let usedChars = contextItems.reduce((sum, item) => sum + item.content.length + (item.cardSummary?.length ?? 0), 0);
   for (const nodeId of cardNodeIds) {
     if (knowledgeCards.length >= MAX_BRIEF_CARDS) {
       break;
@@ -305,7 +247,7 @@ export function buildWikiPageBrief(
     usedChars += cardChars;
   }
   const currentEvidenceHash = calculateWikiPageEvidenceHash(projectRoot, repository, page);
-  const strictFreshness = wikiStrictFreshness(projectRoot, repository);
+  const strictFreshness = wikiStrictFreshness(projectRoot, repository, plan.wikiDir ?? "wiki");
   const writingRequirements = [
     `Write for this audience: ${page.audience}`,
     `Make the page achieve this purpose: ${page.purpose}`,
@@ -337,7 +279,7 @@ export function buildWikiPageBrief(
       status: document.status,
       trustTier: document.trustTier
     })),
-    contextItems: context.items,
+    contextItems,
     knowledgeCards,
     writingRequirements,
     suggestedNextQueries,
@@ -349,8 +291,8 @@ export function stableWikiPlan(plan: WikiPlan): string {
   return `${JSON.stringify(plan, null, 2)}\n`;
 }
 
-function wikiStrictFreshness(projectRoot: string, repository: GraphRepository): WikiStrictFreshness {
-  const freshness = wikiContentFreshness(projectRoot, repository);
+function wikiStrictFreshness(projectRoot: string, repository: GraphRepository, wikiDir: string): WikiStrictFreshness {
+  const freshness = wikiContentFreshness(projectRoot, repository, { wikiDir: path.resolve(projectRoot, wikiDir) });
   return {
     state: freshness.state,
     recommendation: freshness.recommendation,
@@ -361,12 +303,18 @@ function wikiStrictFreshness(projectRoot: string, repository: GraphRepository): 
 export function formatWikiPlan(plan: WikiPlan): string {
   const lines = [
     `Wiki plan: ${plan.pages.length} page(s)`,
+    `Format: v${plan.formatVersion}; Wiki directory: ${plan.wikiDir ?? "not recorded (v1)"}`,
+    `Evidence freshness: ${plan.strictFreshness?.state ?? "unknown"}`,
+    `Evidence guidance: ${plan.strictFreshness?.recommendation ?? "Refresh the index and plan before accepting its evidence."}`,
     `Graph hash: ${plan.graphHash}`,
     `Source hash: ${plan.sourceHash}`
   ];
   for (const page of plan.pages) {
     lines.push(`- ${page.id}: ${page.path} (${page.documentIds.length} document(s), ${page.sourceRefs.length} source ref(s))`);
   }
+  for (const page of plan.suggestions?.pages ?? []) lines.push(`Suggested page: ${page.id} (${page.title}) -> ${page.path}`);
+  for (const source of plan.suggestions?.sources ?? []) lines.push(`Suggested evidence for ${source.pageId}: documents ${source.documentIds.join(", ") || "none"}; sources ${source.sourceRefs.join(", ") || "none"}`);
+  for (const gap of plan.gaps ?? []) lines.push(`Gap: ${gap.path ?? gap.kind}: ${gap.reason} Recovery: ${gap.recovery}`);
   return lines.join("\n");
 }
 
@@ -422,7 +370,7 @@ export function validateWikiPlan(value: unknown): WikiPlan {
   if (value.format !== WIKI_PLAN_FORMAT) {
     throw invalidPlan("wiki.plan_format", `Unsupported Wiki plan format: ${String(value.format)}.`);
   }
-  if (value.formatVersion !== WIKI_PLAN_FORMAT_VERSION) {
+  if (value.formatVersion !== 1 && value.formatVersion !== WIKI_PLAN_FORMAT_VERSION) {
     throw invalidPlan("wiki.plan_version", `Unsupported Wiki plan formatVersion: ${String(value.formatVersion)}.`);
   }
   if (!isSha256(value.graphHash) || !isSha256(value.sourceHash)) {
@@ -444,19 +392,44 @@ export function validateWikiPlan(value: unknown): WikiPlan {
     ids.add(page.id);
     paths.add(page.path.toLowerCase());
   }
+  assertNoParentCycles(pages);
   for (const page of pages) {
     if (page.parentId && (!ids.has(page.parentId) || page.parentId === page.id)) {
       throw invalidPlan("wiki.plan_parent", `Invalid parentId for Wiki page ${page.id}: ${page.parentId}.`);
     }
   }
+  const formatVersion = value.formatVersion as 1 | typeof WIKI_PLAN_FORMAT_VERSION;
+  if (formatVersion === 2 && pages.some((page) => !page.dependencySnapshot)) {
+    throw invalidPlan("wiki.plan_snapshot", "Every v2 page must contain its dependencySnapshot; refresh this plan from its previous version.");
+  }
+  const wikiDir = formatVersion === 2 ? safeProjectRelativePath(requiredString(value.wikiDir, "wikiDir")) : undefined;
+  if (formatVersion === 2 && !wikiDir) {
+    throw invalidPlan("wiki.plan_wiki_dir", "wikiDir must be a safe project-relative directory.");
+  }
   return {
     format: WIKI_PLAN_FORMAT,
-    formatVersion: WIKI_PLAN_FORMAT_VERSION,
+    formatVersion,
     graphHash: value.graphHash,
     sourceHash: value.sourceHash,
     strictFreshness: optionalWikiStrictFreshness(value.strictFreshness),
-    pages
+    wikiDir,
+    pages,
+    suggestions: formatVersion === 2 ? validateSuggestions(value.suggestions) : undefined,
+    gaps: validateGaps(value.gaps)
   };
+}
+
+function assertNoParentCycles(pages: WikiPlanPage[]): void {
+  const parentById = new Map(pages.map((page) => [page.id, page.parentId]));
+  for (const page of pages) {
+    const seen = new Set<string>();
+    let current: string | undefined = page.id;
+    while (current) {
+      if (seen.has(current)) throw invalidPlan("wiki.plan_parent_cycle", `Wiki page parent cycle includes ${current}.`);
+      seen.add(current);
+      current = parentById.get(current);
+    }
+  }
 }
 
 function optionalWikiStrictFreshness(value: unknown): WikiStrictFreshness | undefined {
@@ -561,6 +534,106 @@ function sourceRefsByDocumentId(repository: GraphRepository): Map<string, string
   return refs;
 }
 
+export function wikiSourceHash(repository: GraphRepository, wikiDir = "wiki"): string {
+  const normalizedWikiDir = safeProjectRelativePath(wikiDir) ?? "wiki";
+  return hashCanonical(repository.allDocuments()
+    .filter((document) => !isUnderWikiDir(document.path, normalizedWikiDir))
+    .map((document) => ({ id: document.id, path: document.path, hash: document.hash }))
+    .sort((left, right) => left.path.localeCompare(right.path) || left.id.localeCompare(right.id)));
+}
+
+function resolveWikiDir(projectRoot: string, wikiDir: string): string {
+  const normalized = safeProjectRelativePath(wikiDir);
+  if (!normalized) {
+    throw new WikiPlanError("wiki.plan_wiki_dir", `Wiki directory must be project-relative: ${wikiDir}`, "Pass a safe project-relative --wiki-dir, for example wiki.");
+  }
+  return normalized;
+}
+
+function isUnderWikiDir(documentPath: string, wikiDir: string): boolean {
+  return documentPath === wikiDir || documentPath.startsWith(`${wikiDir}/`);
+}
+
+function dependencySnapshot(projectRoot: string, repository: GraphRepository, page: WikiEvidencePage & Partial<WikiPlanPage>): WikiDependencySnapshot {
+  const documents = new Map(repository.allDocuments().map((document) => [document.id, document]));
+  const previous = page.dependencySnapshot;
+  const previousById = new Map(previous?.documents.map((document) => [document.id, document]) ?? []);
+  return {
+    documents: page.documentIds.map((id) => {
+      const document = documents.get(id);
+      return document ? { id: document.id, path: document.path, hash: document.hash } : { id, path: previousById.get(id)?.path, missing: true };
+    }),
+    sourceRefs: page.sourceRefs.map((sourceRef) => ({ path: sourceRef, fingerprint: sourceRefFingerprint(projectRoot, sourceRef) }))
+  };
+}
+
+function mergePlanPages(
+  projectRoot: string,
+  repository: GraphRepository,
+  from: WikiPlan,
+  generated: WikiPlanPage[],
+  pageSuggestions: WikiPlanSuggestions["pages"],
+  sourceSuggestions: WikiPlanSuggestions["sources"],
+  wikiDir: string
+): WikiPlanPage[] {
+  const generatedById = new Map(generated.map((page) => [page.id, page]));
+  const fromIds = new Set(from.pages.map((page) => page.id));
+  const pages = from.pages.map((previous) => {
+    const candidate = generatedById.get(previous.id);
+    if (candidate) {
+      const addedDocuments = candidate.documentIds.filter((id) => !previous.documentIds.includes(id));
+      const addedSources = candidate.sourceRefs.filter((sourceRef) => !previous.sourceRefs.includes(sourceRef));
+      if (addedDocuments.length || addedSources.length) sourceSuggestions.push({ pageId: previous.id, documentIds: addedDocuments, sourceRefs: addedSources });
+    }
+    const gaps = pageGaps(projectRoot, repository, previous, wikiDir);
+    return {
+      ...previous,
+      evidenceHash: calculateWikiPageEvidenceHash(projectRoot, repository, previous),
+      dependencySnapshot: dependencySnapshot(projectRoot, repository, previous), gaps
+    };
+  });
+  for (const candidate of generated) {
+    if (!fromIds.has(candidate.id)) pageSuggestions.push(candidate);
+  }
+  return pages;
+}
+
+function validateSuggestions(value: unknown): WikiPlanSuggestions {
+  if (!isRecord(value) || !Array.isArray(value.pages) || !Array.isArray(value.sources)) {
+    throw invalidPlan("wiki.plan_suggestions", "v2 suggestions must contain pages and sources arrays.");
+  }
+  return {
+    pages: value.pages.map((item, index) => {
+      if (!isRecord(item)) throw invalidPlan("wiki.plan_suggestions", `suggestions.pages[${index}] must be an object.`);
+      return validateWikiPlanPage(item, index);
+    }),
+    sources: value.sources.map((item, index) => {
+      if (!isRecord(item)) throw invalidPlan("wiki.plan_suggestions", `suggestions.sources[${index}] must be an object.`);
+      return { pageId: requiredString(item.pageId, `suggestions.sources[${index}].pageId`), documentIds: stringArray(item.documentIds, `suggestions.sources[${index}].documentIds`), sourceRefs: stringArray(item.sourceRefs, `suggestions.sources[${index}].sourceRefs`).map((source) => { const safe = safeProjectRelativePath(source); if (!safe) throw invalidPlan("wiki.plan_suggestions", "Suggested sources must be project-relative."); return safe; }) };
+    })
+  };
+}
+
+function optionalDependencySnapshot(value: unknown, index: number): WikiDependencySnapshot | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !Array.isArray(value.documents) || !Array.isArray(value.sourceRefs)) {
+    throw invalidPlan("wiki.plan_snapshot", `pages[${index}].dependencySnapshot must contain documents and sourceRefs arrays.`);
+  }
+  return {
+    documents: value.documents.map((item, documentIndex) => {
+      if (!isRecord(item) || typeof item.id !== "string" || !item.id) throw invalidPlan("wiki.plan_snapshot", `pages[${index}].dependencySnapshot.documents[${documentIndex}] must contain id.`);
+      if (item.path !== undefined && (typeof item.path !== "string" || !safeProjectRelativePath(item.path))) throw invalidPlan("wiki.plan_snapshot", "Snapshot document paths must be project-relative.");
+      if (item.missing === true) return { id: item.id, path: item.path as string | undefined, missing: true as const };
+      if (typeof item.path !== "string" || typeof item.hash !== "string" || !isSha256(item.hash)) throw invalidPlan("wiki.plan_snapshot", `pages[${index}].dependencySnapshot.documents[${documentIndex}] must contain path and hash.`);
+      return { id: item.id, path: item.path, hash: item.hash };
+    }),
+    sourceRefs: value.sourceRefs.map((item, sourceIndex) => {
+      if (!isRecord(item) || typeof item.path !== "string" || !safeProjectRelativePath(item.path) || typeof item.fingerprint !== "string") throw invalidPlan("wiki.plan_snapshot", `pages[${index}].dependencySnapshot.sourceRefs[${sourceIndex}] must contain path and fingerprint.`);
+      return { path: item.path, fingerprint: item.fingerprint };
+    })
+  };
+}
+
 function validateWikiPlanPage(value: unknown, index: number): WikiPlanPage {
   if (!isRecord(value)) {
     throw invalidPlan("wiki.plan_page_shape", `Wiki plan pages[${index}] must be an object.`);
@@ -591,7 +664,9 @@ function validateWikiPlanPage(value: unknown, index: number): WikiPlanPage {
       return safe;
     }),
     evidenceQueries: stringArray(value.evidenceQueries, `pages[${index}].evidenceQueries`),
-    evidenceHash: requiredString(value.evidenceHash, `pages[${index}].evidenceHash`)
+    evidenceHash: requiredString(value.evidenceHash, `pages[${index}].evidenceHash`),
+    dependencySnapshot: optionalDependencySnapshot(value.dependencySnapshot, index),
+    gaps: validateGaps(value.gaps)
   };
   if (!isSha256(page.evidenceHash)) {
     throw invalidPlan("wiki.plan_evidence_hash", `Wiki page ${id} evidenceHash must be a SHA-256 string.`);
@@ -599,16 +674,33 @@ function validateWikiPlanPage(value: unknown, index: number): WikiPlanPage {
   return page;
 }
 
-function documentText(document: GraphDocument): string {
-  return ` ${document.path} ${document.title} ${document.type} `.toLowerCase();
+function pageGaps(projectRoot: string, repository: GraphRepository, page: WikiEvidencePage & Partial<WikiPlanPage>, wikiDir: string): WikiPlanGap[] {
+  const documents = new Map(repository.allDocuments().map((document) => [document.id, document]));
+  const gaps: WikiPlanGap[] = [];
+  for (const id of page.documentIds) {
+    const document = documents.get(id);
+    const previousPath = page.dependencySnapshot?.documents.find((item) => item.id === id)?.path;
+    if (!document || isUnderWikiDir(document.path, wikiDir)) gaps.push({ kind: "document", path: document?.path ?? previousPath,
+      reason: !document ? `Selected document ${id} is no longer indexed.` : "Wiki output cannot serve as its own source evidence.",
+      recovery: "Review the selected documentIds, restore or replace the source, and refresh the plan." });
+  }
+  for (const source of page.sourceRefs) {
+    const fingerprint = sourceRefFingerprint(projectRoot, source);
+    if (!/^[a-f0-9]{64}$/.test(fingerprint) || isUnderWikiDir(source, wikiDir)) gaps.push({ kind: "source_ref", path: source,
+      reason: isUnderWikiDir(source, wikiDir) ? "Wiki output cannot serve as its own source evidence." : `Source reference is ${fingerprint}.`,
+      recovery: "Inspect the source path and restore it or explicitly revise the selected sourceRefs before refreshing the plan." });
+  }
+  return gaps;
 }
 
-function keywordScore(text: string, keywords: string[], weight: number): number {
-  return keywords.reduce((score, keyword) => score + (text.includes(keyword) ? weight : 0), 0);
-}
-
-function basenameScore(documentPath: string, names: string[], score: number): number {
-  return names.includes(path.posix.basename(documentPath).toLowerCase()) ? score : 0;
+function validateGaps(value: unknown): WikiPlanGap[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw invalidPlan("wiki.plan_gaps", "gaps must be an array.");
+  return value.map((gap) => {
+    if (!isRecord(gap) || !["document", "source_ref", "domain"].includes(String(gap.kind))) throw invalidPlan("wiki.plan_gaps", "Gap kind must identify a document, source_ref, or domain.");
+    if (gap.path !== undefined && (typeof gap.path !== "string" || !safeProjectRelativePath(gap.path))) throw invalidPlan("wiki.plan_gaps", "Gap paths must be project-relative.");
+    return { kind: gap.kind as WikiPlanGap["kind"], path: gap.path as string | undefined, reason: requiredString(gap.reason, "gap.reason"), recovery: requiredString(gap.recovery, "gap.recovery") };
+  });
 }
 
 function compareDocuments(left: GraphDocument, right: GraphDocument): number {

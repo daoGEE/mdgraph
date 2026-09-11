@@ -129,13 +129,17 @@ export {
   sourceRefFingerprint,
   stableWikiPlan,
   validateWikiPlan,
-  writeWikiPlan
+  writeWikiPlan,
+  wikiSourceHash
 } from "./wiki/wiki-plan.js";
 export type {
   WikiBriefSourceDocument,
   WikiBriefOptions,
   WikiPageBrief,
   WikiPlan,
+  WikiPlanOptions,
+  WikiPlanSuggestions,
+  WikiDependencySnapshot,
   WikiPlanPage,
   WikiStrictFreshness
 } from "./wiki/wiki-plan.js";

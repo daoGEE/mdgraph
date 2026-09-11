@@ -12,6 +12,7 @@ import {
   WikiPlanError,
   safeProjectRelativePath,
   safeWikiPagePath,
+  wikiSourceHash,
   type WikiPlan,
   type WikiPlanPage
 } from "./wiki-plan.js";
@@ -98,15 +99,16 @@ export function buildWikiStatus(
   const currentGraph = buildGraphJsonExport(projectRoot, repository);
   const planCommand = wikiPlanRecoveryCommand(options.planPath);
   const indexFreshness = wikiContentFreshness(projectRoot, repository, { wikiDir: resolvedWikiDir });
-  const planCurrent = plan.graphHash === currentGraph.graphHash
-    && plan.sourceHash === currentGraph.sourceHash
+  const currentSourceHash = plan.formatVersion === 2 ? wikiSourceHash(repository, plan.wikiDir) : currentGraph.sourceHash;
+  const planCurrent = (plan.formatVersion === 2 || plan.graphHash === currentGraph.graphHash)
+    && plan.sourceHash === currentSourceHash
     && indexFreshness.state === "fresh";
   const planStatus: WikiPlanStatus = {
     state: planCurrent ? "current" : "stale",
     graphHash: plan.graphHash,
     sourceHash: plan.sourceHash,
     currentGraphHash: currentGraph.graphHash,
-    currentSourceHash: currentGraph.sourceHash,
+    currentSourceHash,
     reason: planCurrent ? undefined : indexFreshness.state !== "fresh"
       ? `Indexed Markdown evidence is ${indexFreshness.state}; ${indexFreshness.recommendation}.`
       : "The graph or indexed document source snapshot has changed since this plan was created.",
@@ -175,7 +177,7 @@ export function verifyWiki(
   const resolvedWikiDir = path.resolve(wikiDir);
   const errors: WikiVerificationIssue[] = [];
   const warnings: WikiVerificationIssue[] = [];
-  if (plan.formatVersion !== WIKI_PLAN_FORMAT_VERSION) {
+  if (plan.formatVersion !== 1 && plan.formatVersion !== WIKI_PLAN_FORMAT_VERSION) {
     errors.push(issue(
       "wiki.plan_version",
       `Unsupported Wiki plan formatVersion: ${plan.formatVersion}.`,

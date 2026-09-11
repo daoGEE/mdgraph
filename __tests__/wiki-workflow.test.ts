@@ -38,7 +38,7 @@ describe("Wiki workflow", () => {
       expect(stableWikiPlan(first)).toBe(stableWikiPlan(second));
       expect(first).toMatchObject({
         format: "mdgraph-wiki-plan",
-        formatVersion: 1,
+        formatVersion: 2,
         graphHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         strictFreshness: { state: "fresh" }

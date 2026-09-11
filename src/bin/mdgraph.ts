@@ -337,14 +337,21 @@ wikiCommand
   .command("plan")
   .description("Create a deterministic WikiPlan without generating page prose")
   .requiredOption("--out <file>", "WikiPlan JSON output path")
+  .option("--from <file>", "Preserve authored pages from an existing plan and suggest new evidence")
+  .option("--wiki-dir <dir>", "Project-relative Wiki output directory (required when migrating a v1 plan)")
   .option("--json", "Print JSON output")
   .option("--path <path>", "Project root. Defaults to the current working directory")
-  .action((options: { out: string; json?: boolean; path?: string }) => {
+  .action((options: { out: string; from?: string; wikiDir?: string; json?: boolean; path?: string }) => {
     const projectRoot = projectRootFromOption(options.path);
+    const out = resolveProjectArtifactPath(projectRoot, options.out);
+    const fromPath = options.from ? resolveProjectArtifactPath(projectRoot, options.from) : undefined;
+    if (fromPath && out === fromPath) {
+      throw new Error("Choose a different --out path when updating a plan with --from; review the new plan before replacing the original.");
+    }
+    const from = fromPath ? readWikiPlan(fromPath) : undefined;
     const repository = openRepository(projectRoot);
     try {
-      const plan = buildWikiPlan(projectRoot, repository);
-      const out = resolveProjectArtifactPath(projectRoot, options.out);
+      const plan = buildWikiPlan(projectRoot, repository, { from, wikiDir: options.wikiDir });
       writeWikiPlan(out, plan);
       printResult(options.json, { out, plan }, [`Wrote Wiki plan: ${out}`, formatWikiPlan(plan)].join("\n"));
     } finally {
