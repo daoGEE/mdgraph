@@ -2,20 +2,21 @@
 
 All notable changes to MDGraph are documented here. MDGraph follows semantic versioning for its public releases.
 
-## Knowledge and Wiki maintenance improvements
-
-- Knowledge Cards distinguish direct, inherited, and related evidence, preserve source ownership, and provide bounded next-read paths.
-- WikiPlan v2 preserves authored page selections during updates, records the output directory and dependency snapshots, and separates suggested pages/sources from selected evidence. Version 1 plans remain readable.
-- Wiki briefs and status share dependency assessment, explain unavailable or changed sources, and preserve user-selected references during review. Verification explicitly reports that prose correctness is not evaluated.
-- Added CLI/MCP compatibility and full maintenance-flow regression tests, packaged workflow checks, and a reproducible orchard output baseline.
-
-## Unreleased
+## 1.2.0 - 2026-09-12
 
 ### Added
 
 - Experimental deterministic Knowledge Cards on `node` plus spare-budget Card summaries in `context`.
 - Experimental `wiki plan/brief/status/verify` commands for evidence-backed user-maintained Wiki planning, impact status, and read-only verification.
 - A reusable Wiki authoring prompt/skill without changing the five-tool MCP surface or adding a generation provider.
+- Returned-evidence retrieval metrics alongside unchanged legacy index-coverage metrics, plus a reproducible performance sampling script.
+- CI coverage for Node 22 and 26 and early SQLite compatibility; packaged CLI checks for cards and Wiki briefs.
+
+### Changed
+
+- Knowledge Cards distinguish direct, inherited, and related evidence, preserve source ownership, and provide bounded next-read paths.
+- WikiPlan v2 preserves authored page selections during updates, records the output directory and dependency snapshots, and separates suggested pages/sources from selected evidence. Version 1 plans remain readable.
+- Wiki briefs and status share dependency assessment, explain unavailable or changed sources, and preserve user-selected references during review. Verification explicitly reports that prose correctness is not evaluated.
 
 ### Fixed
 
@@ -26,10 +27,10 @@ All notable changes to MDGraph are documented here. MDGraph follows semantic ver
 - Verify Wiki evidence against current Markdown hashes and validate maintenance field types.
 - Normalize early node:sqlite empty-row behavior and provide actionable recovery when FTS5 is unavailable.
 
-### Added
+### Compatibility
 
-- Returned-evidence retrieval metrics alongside unchanged legacy index-coverage metrics, plus a reproducible performance sampling script.
-- CI coverage for Node 22 and 26 and early SQLite compatibility; packaged CLI checks for cards and Wiki briefs.
+- Deterministic indexing, the default context-packing strategy, stable `search`, the five-tool MCP surface, schema version 1, and the public `alpha | cjk` evaluation query-set enum remain unchanged.
+- Supported Node.js builds must provide FTS5 through `node:sqlite`; Node 22.23.2 and 26.5.0 are verified.
 
 ## 1.1.0 - 2026-08-03
 
