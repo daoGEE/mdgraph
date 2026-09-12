@@ -26,6 +26,7 @@ All notable changes to MDGraph are documented here. MDGraph follows semantic ver
 - Match complete Chinese/entity/configuration-key queries and retain definition evidence; enforce serialized Knowledge Card budgets.
 - Verify Wiki evidence against current Markdown hashes and validate maintenance field types.
 - Normalize early node:sqlite empty-row behavior and provide actionable recovery when FTS5 is unavailable.
+- Update test dependencies to audited Vitest and nanoid versions so the release workflow reports no known vulnerabilities.
 
 ### Compatibility
 
