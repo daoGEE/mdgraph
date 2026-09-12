@@ -23,7 +23,7 @@ describe("Wiki evidence", () => {
     try {
       const originalOpen = fs.openSync;
       fs.openSync = ((filePath: fs.PathOrFileDescriptor, ...rest: Parameters<typeof fs.openSync>) => {
-        if (String(filePath).endsWith("src/core.ts")) throw new Error("simulated unreadable source");
+        if (path.normalize(String(filePath)).endsWith(path.join("src", "core.ts"))) throw new Error("simulated unreadable source");
         return originalOpen(filePath, ...rest);
       }) as typeof fs.openSync;
       try {
