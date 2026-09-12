@@ -19,3 +19,5 @@ Default order for Markdown/documentation questions:
 - Fall back to normal file reads when MDGraph is inactive, stale for the task, too sparse, or when exact source text is required.
 
 Do not treat MDGraph as hidden memory, a source AST index, or an authority beyond the indexed Markdown corpus. Do not create or update an index unless the user asks for it.
+
+See the [Agent Integration guide](../docs/EN/Agent_Integration.md) for the shared setup and host-specific placement notes.
